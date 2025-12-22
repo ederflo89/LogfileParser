@@ -102,6 +102,12 @@ class LogParserApp:
         
         ttk.Button(
             btn_frame,
+            text="Datei hinzufügen",
+            command=self._add_file
+        ).pack(side=tk.LEFT, padx=2)
+        
+        ttk.Button(
+            btn_frame,
             text="Entfernen",
             command=self._remove_directory
         ).pack(side=tk.LEFT, padx=2)
@@ -277,53 +283,82 @@ class LogParserApp:
         ).pack(side=tk.RIGHT, padx=2)
     
     def _add_directory(self):
-        """Fügt ein Verzeichnis oder ZIP-Datei zur Liste hinzu"""
-        # Frage Benutzer ob Verzeichnis oder ZIP-Datei
-        choice = messagebox.askyesnocancel(
-            "Quelle auswählen",
-            "Möchten Sie ein Verzeichnis auswählen?\n\n"
-            "Ja = Verzeichnis auswählen\n"
-            "Nein = ZIP-Datei auswählen\n"
-            "Abbrechen = Abbrechen"
-        )
-        
-        if choice is None:  # Abbrechen
+        """Fügt ein Verzeichnis zur Liste hinzu und findet automatisch alle ZIP-Dateien darin"""
+        directory = filedialog.askdirectory(title="Verzeichnis auswählen")
+        if not directory:
             return
-        elif choice:  # Verzeichnis
-            directory = filedialog.askdirectory(title="Verzeichnis auswählen")
-            if directory and directory not in self.directories:
-                self.directories.append(directory)
-                self.dir_listbox.insert(tk.END, directory)
-                self._log(f"Verzeichnis hinzugefügt: {directory}")
-        else:  # ZIP-Datei
-            zip_path = filedialog.askopenfilename(
-                title="ZIP-Datei auswählen",
-                filetypes=[("ZIP files", "*.zip"), ("All files", "*.*")]
-            )
-            if zip_path:
-                self._add_zip_file(zip_path)
+            
+        directory_path = Path(directory)
+        
+        # Füge Hauptverzeichnis hinzu
+        if directory not in self.directories:
+            self.directories.append(directory)
+            self.dir_listbox.insert(tk.END, directory)
+            self._log(f"Verzeichnis hinzugefügt: {directory}")
+        
+        # Suche rekursiv nach ZIP-Dateien
+        zip_files = list(directory_path.rglob("*.zip"))
+        if zip_files:
+            self._log(f"Gefundene ZIP-Dateien: {len(zip_files)}")
+            for zip_file in zip_files:
+                self._add_zip_file(str(zip_file))
+        else:
+            self._log("Keine ZIP-Dateien im Verzeichnis gefunden")
+    
+    def _add_file(self):
+        """Fügt eine einzelne Datei hinzu (automatische Erkennung ob ZIP)"""
+        file_path = filedialog.askopenfilename(
+            title="Datei auswählen",
+            filetypes=[
+                ("Alle unterstützten Dateien", "*.zip;*.log;*.txt"),
+                ("ZIP-Archive", "*.zip"),
+                ("Log-Dateien", "*.log;*.txt"),
+                ("Alle Dateien", "*.*")
+            ]
+        )
+        if not file_path:
+            return
+        
+        file_path_obj = Path(file_path)
+        
+        # Prüfe ob ZIP-Datei
+        if file_path_obj.suffix.lower() == '.zip':
+            self._add_zip_file(file_path)
+        else:
+            # Füge Verzeichnis der Datei hinzu (damit die Datei geparst wird)
+            parent_dir = str(file_path_obj.parent)
+            if parent_dir not in self.directories:
+                self.directories.append(parent_dir)
+                self.dir_listbox.insert(tk.END, f"📄 {file_path_obj.name} → {parent_dir}")
+                self._log(f"Datei hinzugefügt: {file_path_obj.name}")
     
     def _add_zip_file(self, zip_path: str):
         """Extrahiert ZIP-Datei in temporäres Verzeichnis"""
         try:
+            zip_path_obj = Path(zip_path)
+            
             # Erstelle temporäres Verzeichnis
             temp_dir = tempfile.mkdtemp(prefix="logparser_zip_")
             self.temp_dirs.append(temp_dir)
             
             # Extrahiere ZIP
-            self._log(f"Extrahiere ZIP-Datei: {Path(zip_path).name}")
+            self._log(f"Extrahiere ZIP: {zip_path_obj.name}")
             with zipfile.ZipFile(zip_path, 'r') as zip_ref:
                 zip_ref.extractall(temp_dir)
             
+            # Zähle extrahierte Dateien
+            all_files = list(Path(temp_dir).rglob('*'))
+            log_files = [f for f in all_files if f.suffix.lower() in ['.log', '.txt']]
+            
             # Füge temporäres Verzeichnis zur Liste hinzu
             self.directories.append(temp_dir)
-            display_name = f"📦 {Path(zip_path).name} → {temp_dir}"
+            display_name = f"📦 {zip_path_obj.name} ({len(log_files)} Logs)"
             self.dir_listbox.insert(tk.END, display_name)
-            self._log(f"ZIP extrahiert: {len(list(Path(temp_dir).rglob('*')))} Dateien gefunden")
+            self._log(f"  └─ Extrahiert: {len(log_files)} Log-Dateien, {len(all_files)} Dateien gesamt")
             
         except Exception as e:
             messagebox.showerror("Fehler", f"ZIP-Datei konnte nicht extrahiert werden:\n{str(e)}")
-            self._log(f"FEHLER beim Extrahieren: {str(e)}")
+            self._log(f"FEHLER beim Extrahieren von {Path(zip_path).name}: {str(e)}")
     
     def _remove_directory(self):
         """Entfernt das ausgewählte Verzeichnis"""
