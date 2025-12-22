@@ -31,6 +31,145 @@ class AVStumpflLogParser:
         # Entferne umschließende Anführungszeichen
         normalized = re.sub(r"^'(.*)'$", r'\1', normalized)
         
+        # ===== PATTERN-BASIERTE NORMALISIERUNG (vor einzelnen Ersetzungen) =====
+        
+        # Pattern: "transferring file from 'X' to 'Y' failed: Z"
+        # Beispiel: transferring file from 'D:\...\file.log' to '<bundling>D:\...\file.log' failed: copying failed (...)
+        # → transferring file from '<SOURCE>' to '<DEST>' failed: <ERROR>
+        normalized = re.sub(
+            r"transferring file from '[^']+' to '[^']+' failed: .+",
+            "transferring file from '<SOURCE>' to '<DEST>' failed: <ERROR>",
+            normalized,
+            flags=re.IGNORECASE
+        )
+        
+        # Pattern: "loading '<?>(path)' failed: opening file '(path)' failed"
+        # Beispiel: loading '<?>\\server\share\file.mov' failed: opening file '\\server\share\file.mov' failed
+        # → loading '<FILE>' failed: opening file '<FILE>' failed
+        normalized = re.sub(
+            r"loading '<\?>[^']+' failed: opening file '[^']+' failed",
+            "loading '<FILE>' failed: opening file '<FILE>' failed",
+            normalized,
+            flags=re.IGNORECASE
+        )
+        
+        # Pattern: "error while enumerating (path) : (error message)"
+        # Beispiel: error while enumerating Data/...* : The network path was not found. (53)
+        # → error while enumerating <PATH> : <ERROR>
+        normalized = re.sub(
+            r"error while enumerating [^:]+\s*:\s*.+",
+            "error while enumerating <PATH> : <ERROR>",
+            normalized,
+            flags=re.IGNORECASE
+        )
+        
+        # Pattern: "decoding '(path)' failed: (error)"
+        # Auch ohne "failed:" am Ende
+        # Beispiel: decoding 'Data/...\file.jpg' failed: Invalid data found
+        # Beispiel: decoding 'Data/...\file.jpg' failed
+        # → decoding '<FILE>' failed: <ERROR>
+        normalized = re.sub(
+            r"decoding '[^']+' failed.*",
+            "decoding '<FILE>' failed: <ERROR>",
+            normalized,
+            flags=re.IGNORECASE
+        )
+        
+        # Pattern: "create_directories: (error) : '(path)'"
+        # Beispiel: create_directories: The system cannot find the path specified.: "Content/..."
+        # → create_directories: <ERROR>
+        normalized = re.sub(
+            r'create_directories:\s*.+:\s*["\'][^"\']+["\']',
+            "create_directories: <ERROR>",
+            normalized,
+            flags=re.IGNORECASE
+        )
+        
+        # Pattern: "directory_iterator::directory_iterator: (error): '(path)'"
+        # → directory_iterator: <ERROR>
+        normalized = re.sub(
+            r'directory_iterator::directory_iterator:\s*.+:\s*["\'][^"\']+["\']',
+            "directory_iterator: <ERROR>",
+            normalized,
+            flags=re.IGNORECASE
+        )
+        
+        # Pattern: "authenticating on '(path)' failed: (error)"
+        # → authenticating on '<PATH>' failed: <ERROR>
+        normalized = re.sub(
+            r"authenticating on '[^']+' failed:\s*.+",
+            "authenticating on '<PATH>' failed: <ERROR>",
+            normalized,
+            flags=re.IGNORECASE
+        )
+        
+        # Pattern: "updating render task failed: (error)"
+        # Beispiel: updating render task failed: importing texture memory failed
+        # → updating render task failed: <ERROR>
+        normalized = re.sub(
+            r"updating render task failed:\s*.+",
+            "updating render task failed: <ERROR>",
+            normalized,
+            flags=re.IGNORECASE
+        )
+        
+        # Pattern: "encoding frame failed: (error)"
+        # → encoding frame failed: <ERROR>
+        normalized = re.sub(
+            r"encoding frame failed:\s*.+",
+            "encoding frame failed: <ERROR>",
+            normalized,
+            flags=re.IGNORECASE
+        )
+        
+        # Pattern: "assertion '(text)' failed in (location)"
+        # Beispiel: assertion 'referenced' failed in graph::GraphImpl::create_referenced_node
+        # → assertion failed in <LOCATION>
+        normalized = re.sub(
+            r"assertion '[^']+' failed in .+",
+            "assertion failed in <LOCATION>",
+            normalized,
+            flags=re.IGNORECASE
+        )
+        
+        # Pattern: "loading module '(name)' failed: (error)"
+        # → loading module failed: <ERROR>
+        normalized = re.sub(
+            r"loading module '[^']+' failed:\s*.+",
+            "loading module failed: <ERROR>",
+            normalized,
+            flags=re.IGNORECASE
+        )
+        
+        # Pattern: "invalid projection matrix (LRTB: numbers / Z-NF: numbers)"
+        # → invalid projection matrix
+        normalized = re.sub(
+            r"invalid projection matrix \(LRTB:[^)]+\s*/\s*Z-NF:[^)]+\)",
+            "invalid projection matrix",
+            normalized,
+            flags=re.IGNORECASE
+        )
+        
+        # Pattern: "automatically reloaded texture '(path)' disappeared"
+        # → automatically reloaded texture disappeared
+        normalized = re.sub(
+            r"automatically reloaded texture '[^']+' disappeared",
+            "automatically reloaded texture disappeared",
+            normalized,
+            flags=re.IGNORECASE
+        )
+        
+        # Pattern: "display sync timed out ((ip) / (output))"
+        # → display sync timed out
+        normalized = re.sub(
+            r"display sync timed out \([^)]+\)",
+            "display sync timed out",
+            normalized,
+            flags=re.IGNORECASE
+        )
+        
+        # ===== EINZELNE ERSETZUNGEN (nach Pattern-Normalisierung) =====
+        
         # Ersetze IP-Adressen durch Platzhalter
         normalized = re.sub(r'\b(?:\d{1,3}\.){3}\d{1,3}\b', '<IP>', normalized)
         
