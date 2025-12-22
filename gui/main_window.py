@@ -184,7 +184,14 @@ class LogParserApp:
         output_inner.pack(fill=tk.X)
         
         self.output_path_var = tk.StringVar()
-        default_output = str(Path.cwd() / f"logparser_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv")
+        # Verwende sicheres Verzeichnis: Desktop oder Dokumente, nicht System32
+        safe_dir = Path.home() / "Desktop"
+        if not safe_dir.exists():
+            safe_dir = Path.home() / "Documents"
+        if not safe_dir.exists():
+            safe_dir = Path(__file__).parent.parent  # Programmverzeichnis als Fallback
+        
+        default_output = str(safe_dir / f"logparser_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv")
         self.output_path_var.set(default_output)
         
         ttk.Entry(
@@ -518,6 +525,29 @@ class LogParserApp:
             messagebox.showwarning(
                 "Keine Ausgabedatei",
                 "Bitte wählen Sie eine Ausgabedatei."
+            )
+            return
+        
+        # Validiere Ausgabeverzeichnis
+        output_dir = Path(output_path).parent
+        if not output_dir.exists():
+            messagebox.showerror(
+                "Ungültiger Pfad",
+                f"Das Verzeichnis existiert nicht:\n{output_dir}"
+            )
+            return
+        
+        # Prüfe ob Verzeichnis beschreibbar ist
+        try:
+            test_file = output_dir / ".logparser_write_test"
+            test_file.touch()
+            test_file.unlink()
+        except Exception as e:
+            messagebox.showerror(
+                "Keine Schreibberechtigung",
+                f"Keine Schreibberechtigung für:\n{output_dir}\n\n"
+                f"Bitte wählen Sie einen anderen Speicherort (z.B. Desktop oder Dokumente).\n\n"
+                f"Fehler: {str(e)}"
             )
             return
         
