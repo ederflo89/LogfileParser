@@ -300,8 +300,8 @@ class LogParserApp:
         zip_files = list(directory_path.rglob("*.zip"))
         if zip_files:
             self._log(f"Gefundene ZIP-Dateien: {len(zip_files)}")
-            for zip_file in zip_files:
-                self._add_zip_file(str(zip_file))
+            # Zeige Progress-Dialog und extrahiere ZIPs
+            self._extract_zip_files_with_progress(zip_files)
         else:
             self._log("Keine ZIP-Dateien im Verzeichnis gefunden")
     
@@ -326,7 +326,8 @@ class LogParserApp:
         
         if is_zip:
             self._log(f"ZIP-Datei erkannt: {file_path_obj.name}")
-            self._add_zip_file(file_path)
+            # Zeige Progress-Dialog für einzelne ZIP
+            self._extract_zip_files_with_progress([Path(file_path)])
         else:
             self._log(f"Log-Datei erkannt: {file_path_obj.name}")
             # Füge Verzeichnis der Datei hinzu (damit die Datei geparst wird)
@@ -335,6 +336,100 @@ class LogParserApp:
                 self.directories.append(parent_dir)
                 self.dir_listbox.insert(tk.END, f"📄 {file_path_obj.name} → {parent_dir}")
                 self._log(f"Datei hinzugefügt: {file_path_obj.name}")
+    
+    def _extract_zip_files_with_progress(self, zip_files: list):
+        """Extrahiert mehrere ZIP-Dateien mit Fortschrittsanzeige"""
+        # Erstelle Progress-Dialog
+        progress_dialog = tk.Toplevel(self.root)
+        progress_dialog.title("ZIP-Dateien extrahieren")
+        progress_dialog.geometry("600x200")
+        progress_dialog.transient(self.root)
+        progress_dialog.grab_set()
+        
+        # Status-Label
+        status_label = ttk.Label(
+            progress_dialog,
+            text=f"Extrahiere 0 von {len(zip_files)} ZIP-Dateien...",
+            font=('Arial', 10, 'bold')
+        )
+        status_label.pack(pady=(20, 10))
+        
+        # Aktueller Dateiname
+        file_label = ttk.Label(
+            progress_dialog,
+            text="Vorbereitung...",
+            font=('Arial', 9),
+            wraplength=550
+        )
+        file_label.pack(pady=5)
+        
+        # Fortschrittsbalken
+        progress_bar = ttk.Progressbar(
+            progress_dialog,
+            mode='determinate',
+            length=550,
+            maximum=len(zip_files)
+        )
+        progress_bar.pack(pady=10)
+        
+        # Detail-Label
+        detail_label = ttk.Label(
+            progress_dialog,
+            text="",
+            font=('Arial', 8),
+            foreground='gray'
+        )
+        detail_label.pack(pady=5)
+        
+        # Extrahiere ZIPs in Thread
+        def extract_worker():
+            for idx, zip_file in enumerate(zip_files, 1):
+                try:
+                    zip_path_obj = Path(zip_file)
+                    
+                    # Update UI
+                    self.root.after(0, lambda i=idx, name=zip_path_obj.name: (
+                        status_label.config(text=f"Extrahiere {i} von {len(zip_files)} ZIP-Dateien..."),
+                        file_label.config(text=f"📦 {name}"),
+                        progress_bar.config(value=i-1)
+                    ))
+                    
+                    # Erstelle temporäres Verzeichnis
+                    temp_dir = tempfile.mkdtemp(prefix="logparser_zip_")
+                    self.temp_dirs.append(temp_dir)
+                    
+                    # Extrahiere ZIP
+                    self.root.after(0, lambda: self._log(f"Extrahiere ZIP: {zip_path_obj.name}"))
+                    with zipfile.ZipFile(str(zip_file), 'r') as zip_ref:
+                        zip_ref.extractall(temp_dir)
+                    
+                    # Zähle extrahierte Dateien
+                    all_files = list(Path(temp_dir).rglob('*'))
+                    log_files = [f for f in all_files if f.suffix.lower() in ['.log', '.txt']]
+                    
+                    # Füge zur Liste hinzu
+                    self.directories.append(temp_dir)
+                    display_name = f"📦 {zip_path_obj.name} ({len(log_files)} Logs)"
+                    self.root.after(0, lambda dn=display_name: self.dir_listbox.insert(tk.END, dn))
+                    self.root.after(0, lambda lf=len(log_files), af=len(all_files): 
+                                  self._log(f"  └─ Extrahiert: {lf} Log-Dateien, {af} Dateien gesamt"))
+                    
+                    # Update Details
+                    self.root.after(0, lambda lf=len(log_files): 
+                                  detail_label.config(text=f"✓ {lf} Log-Dateien gefunden"))
+                    
+                except Exception as e:
+                    error_msg = f"FEHLER beim Extrahieren von {Path(zip_file).name}: {str(e)}"
+                    self.root.after(0, lambda msg=error_msg: self._log(msg))
+                    self.root.after(0, lambda: detail_label.config(text="✗ Fehler beim Extrahieren", foreground='red'))
+            
+            # Schließe Dialog
+            self.root.after(100, progress_dialog.destroy)
+            self.root.after(200, lambda: self._log(f"✓ {len(zip_files)} ZIP-Dateien erfolgreich extrahiert"))
+        
+        # Starte Thread
+        thread = threading.Thread(target=extract_worker, daemon=True)
+        thread.start()
     
     def _add_zip_file(self, zip_path: str):
         """Extrahiert ZIP-Datei in temporäres Verzeichnis"""
