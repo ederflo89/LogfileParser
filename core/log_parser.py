@@ -77,7 +77,9 @@ class LogParser:
                         continue
                     
                     # Prüfe auf Severity-Level
-                    seve# Prüfe ob dieser Fehler bereits gefunden wurde
+                    severity = self._detect_severity(line)
+                    if severity:
+                        # Prüfe ob dieser Fehler bereits gefunden wurde
                         if line not in self.seen_errors:
                             self.seen_errors.add(line)
                             self.results.append((
@@ -91,9 +93,7 @@ class LogParser:
                                     f"Fehler gefunden in {file_path.name}: {severity.upper()}"
                                 )
                         else:
-                            self.skipped_duplicates += 1elf.progress_callback(
-                                f"Fehler gefunden in {file_path.name}: {severity.upper()}"
-                            )
+                            self.skipped_duplicates += 1
         
         except Exception as e:
             if self.progress_callback:
@@ -122,7 +122,12 @@ class LogParser:
                             
                             for line in content.splitlines():
                                 line = line.strip()
-                                if notPrüfe ob dieser Fehler bereits gefunden wurde
+                                if not line:
+                                    continue
+                                
+                                severity = self._detect_severity(line)
+                                if severity:
+                                    # Prüfe ob dieser Fehler bereits gefunden wurde
                                     if line not in self.seen_errors:
                                         self.seen_errors.add(line)
                                         # Verwende ZIP-Pfad + interner Pfad als Dateiname
@@ -138,6 +143,7 @@ class LogParser:
                                                 f"Fehler gefunden in {full_name}: {severity.upper()}"
                                             )
                                     else:
+                                        self.skipped_duplicates += 1
                                         self.skipped_duplicates += 1
                                     
                                     if self.progress_callback:
