@@ -5,30 +5,39 @@ CSV Exporter - Exportiert Parsing-Ergebnisse in CSV-Format
 import csv
 from typing import List, Tuple
 from pathlib import Path
+from .error_categorizer import ErrorCategorizer
 
 
 class CSVExporter:
     """Exportiert Log-Parsing-Ergebnisse in CSV-Dateien"""
     
     @staticmethod
-    def export(results: List[Tuple[str, str, str]], output_path: str):
+    def export(results: List[Tuple[str, str, str]], output_path: str, 
+               anonymizer=None, add_category: bool = True):
         """
         Exportiert Ergebnisse in eine CSV-Datei
         
         Args:
             results: Liste von Tupeln (Logfilename, Severity, Eintragstext)
             output_path: Pfad zur Ausgabe-CSV-Datei
+            anonymizer: Optionaler DataAnonymizer für Anonymisierung
+            add_category: Wenn True, fügt Fehler-Kategorie-Spalte hinzu
         """
         output_file = Path(output_path)
+        categorizer = ErrorCategorizer() if add_category else None
         
         # Erstelle Verzeichnis falls nicht vorhanden
         output_file.parent.mkdir(parents=True, exist_ok=True)
         
-        with open(output_file, 'w', newline='', encoding='utf-8') as f:
+        with open(output_file, 'w', newline='', encoding='utf-8-sig') as f:
             writer = csv.writer(f, delimiter=',', quotechar='"', quoting=csv.QUOTE_MINIMAL)
             
             # Header schreiben
-            writer.writerow(['Log-Kategorie', 'Ordner', 'Dateiname', 'Severity', 'Eintragstext'])
+            header = ['Log-Kategorie', 'Ordner', 'Dateiname']
+            if add_category:
+                header.append('Fehler-Kategorie')
+            header.extend(['Severity', 'Eintragstext'])
+            writer.writerow(header)
             
             # Daten schreiben
             for logfile, severity, text in results:
@@ -57,6 +66,21 @@ class CSVExporter:
                     log_category = parts[-2] if len(parts) > 1 else ''
                     remaining_path = str(path.parent) if path.parent != Path('.') else ''
                 
-                writer.writerow([log_category, remaining_path, filename, severity, text])
+                # Anonymisiere Daten wenn Anonymizer vorhanden
+                if anonymizer:
+                    remaining_path = anonymizer.anonymize_path(remaining_path) if remaining_path else ''
+                    filename = anonymizer.anonymize_filename(filename)
+                    text = anonymizer.anonymize_message(text)
+                
+                # Erstelle Zeile
+                row = [log_category, remaining_path, filename]
+                
+                # Fehler-Kategorie hinzufügen wenn aktiviert
+                if add_category and categorizer:
+                    error_category = categorizer.categorize(text, '')
+                    row.append(error_category)
+                
+                row.extend([severity, text])
+                writer.writerow(row)
         
         return output_file

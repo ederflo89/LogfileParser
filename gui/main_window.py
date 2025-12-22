@@ -10,6 +10,8 @@ from datetime import datetime
 from core import LogParser, CSVExporter
 from core.avstumpfl_parser import AVStumpflLogParser
 from core.avstumpfl_exporter import AVStumpflCSVExporter
+from core.anonymizer import DataAnonymizer
+from core.summary_exporter import SummaryExporter
 
 
 class LogParserApp:
@@ -24,6 +26,13 @@ class LogParserApp:
         self.is_parsing = False
         self.parser = None
         self.parser_mode = tk.StringVar(value="avstumpfl")  # Default: AV Stumpfl Format
+        
+        # Export-Optionen
+        self.export_detailed = tk.BooleanVar(value=True)
+        self.export_summary = tk.BooleanVar(value=True)
+        self.export_statistics = tk.BooleanVar(value=True)
+        self.anonymize_data = tk.BooleanVar(value=False)
+        self.add_error_category = tk.BooleanVar(value=True)
         
         self._setup_ui()
     
@@ -92,7 +101,58 @@ class LogParserApp:
             text="Entfernen",
             command=self._remove_directory
         ).pack(side=tk.LEFT, padx=2)
+        Export-Optionen Bereich
+        export_options_frame = ttk.LabelFrame(self.root, text="Export-Optionen", padding="10")
+        export_options_frame.pack(fill=tk.X, padx=10, pady=5)
         
+        # Linke Spalte - Export-Typen
+        left_col = ttk.Frame(export_options_frame)
+        left_col.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, 10))
+        
+        ttk.Label(left_col, text="Export-Formate:", font=('Arial', 9, 'bold')).pack(anchor=tk.W)
+        ttk.Checkbutton(
+            left_col,
+            text="Detailliert (alle Einzelheiten)",
+            variable=self.export_detailed
+        ).pack(anchor=tk.W, pady=2)
+        
+        ttk.Checkbutton(
+            left_col,
+            text="Zusammengefasst (gruppiert nach Fehlertyp)",
+            variable=self.export_summary
+        ).pack(anchor=tk.W, pady=2)
+        
+        ttk.Checkbutton(
+            left_col,
+            text="Statistik (Übersicht als TXT)",
+            variable=self.export_statistics
+        ).pack(anchor=tk.W, pady=2)
+        
+        # Rechte Spalte - Verarbeitungsoptionen
+        right_col = ttk.Frame(export_options_frame)
+        right_col.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        
+        ttk.Label(right_col, text="Datenverarbeitung:", font=('Arial', 9, 'bold')).pack(anchor=tk.W)
+        ttk.Checkbutton(
+            right_col,
+            text="Fehler-Kategorisierung (Netzwerk/Datei/System/...)",
+            variable=self.add_error_category
+        ).pack(anchor=tk.W, pady=2)
+        
+        ttk.Checkbutton(
+            right_col,
+            text="Daten anonymisieren (IPs, Pfade, Hostnamen)",
+            variable=self.anonymize_data
+        ).pack(anchor=tk.W, pady=2)
+        
+        ttk.Label(
+            right_col,
+            text="💡 Tipp: Anonymisierung für LLM-Training empfohlen",
+            font=('Arial', 8),
+            foreground='gray'
+        ).pack(anchor=tk.W, padx=20)
+        
+        # 
         ttk.Button(
             btn_frame,
             text="Liste leeren",
@@ -295,7 +355,12 @@ class LogParserApp:
             all_results = []
             mode = self.parser_mode.get()
             
+            # Erstelle Anonymizer wenn aktiviert
+            anonymizer = DataAnonymizer() if self.anonymize_data.get() else None
+            
             self._log(f"Parser-Modus: {'AV Stumpfl Format' if mode == 'avstumpfl' else 'Generischer Modus'}")
+            if anonymizer:
+                self._log("Anonymisierung aktiviert (für LLM-Training)")
             
             for directory in self.directories:
                 if not self.is_parsing:
@@ -320,26 +385,81 @@ class LogParserApp:
                 )
             
             if self.is_parsing and all_results:
-                self._log(f"Exportiere {len(all_results)} eindeutige Einträge nach CSV...")
+                # Berechne Basispfad für Ausgabedateien
+                output_base = Path(output_path).stem
+                output_dir = Path(output_path).parent
                 
-                # Wähle den passenden Exporter
-                if mode == "avstumpfl":
-                    AVStumpflCSVExporter.export(all_results, output_path)
-                else:
-                    CSVExporter.export(all_results, output_path)
+                # Export Detailliert
+                if self.export_detailed.get():
+                    self._log(f"Exportiere {len(all_results)} eindeutige Einträge (Detailliert)...")
+                    detail_path = output_dir / f"{output_base}_detail.csv"
+                    
+                    if mode == "avstumpfl":
+                        AVStumpflCSVExporter.export(
+                            all_results, 
+                            str(detail_path),
+                            anonymizer=anonymizer,
+                            add_category=self.add_error_category.get()
+                        )
+                    else:
+                        CSVExporter.export(
+                            all_results, 
+                            str(detail_path),
+                            anonymizer=anonymizer,
+                            add_category=self.add_error_category.get()
+                        )
+                    
+                    self._log(f"✓ Detailliert: {detail_path}")
                 
-                self._log(f"Erfolgreich exportiert: {output_path}")
+                # Export Zusammengefasst
+                if self.export_summary.get():
+                    self._log("Erstelle zusammengefasste Ansicht...")
+                    summary_path = output_dir / f"{output_base}_summary.csv"
+                    SummaryExporter.export_grouped_csv(
+                        all_results, 
+                        str(summary_path),
+                        anonymizer=anonymizer
+                    )
+                    self._log(f"✓ Zusammengefasst: {summary_path}")
+                
+                # Export Statistik
+                if self.export_statistics.get():
+                    self._log("Erstelle Statistik...")
+                    stats_path = output_dir / f"{output_base}_statistics.txt"
+                    SummaryExporter.export_statistics(
+                        all_results,
+                        str(stats_path),
+                        anonymizer=anonymizer
+                    )
+                    self._log(f"✓ Statistik: {stats_path}")
+                
+                # Zeige Anonymisierungs-Statistik
+                if anonymizer:
+                    anon_stats = anonymizer.get_stats()
+                    self._log("\nAnonymisierungs-Übersicht:")
+                    self._log(f"  - IPs anonymisiert: {anon_stats['ips_anonymized']}")
+                    self._log(f"  - Pfade anonymisiert: {anon_stats['paths_anonymized']}")
+                    self._log(f"  - Hostnamen anonymisiert: {anon_stats['hostnames_anonymized']}")
+                    self._log(f"  - Dateinamen anonymisiert: {anon_stats['filenames_anonymized']}")
                 
                 # Berechne Gesamtzahl übersprungener Duplikate
                 total_skipped = sum(p.skipped_duplicates for p in [parser] if hasattr(parser, 'skipped_duplicates'))
                 
-                self.root.after(0, lambda: messagebox.showinfo(
-                    "Fertig",
-                    f"Parsing abgeschlossen!\n\n"
-                    f"Eindeutige Fehler gefunden: {len(all_results)}\n"
-                    f"Duplikate übersprungen: {total_skipped}\n"
-                    f"Ausgabedatei: {output_path}"
-                ))
+                # Erstelle Zusammenfassung
+                summary_msg = f"Parsing abgeschlossen!\n\n"
+                summary_msg += f"Eindeutige Fehler gefunden: {len(all_results)}\n"
+                summary_msg += f"Duplikate übersprungen: {total_skipped}\n\n"
+                summary_msg += f"Exportierte Dateien:\n"
+                if self.export_detailed.get():
+                    summary_msg += f"  ✓ Detail-CSV\n"
+                if self.export_summary.get():
+                    summary_msg += f"  ✓ Zusammenfassung-CSV\n"
+                if self.export_statistics.get():
+                    summary_msg += f"  ✓ Statistik-TXT\n"
+                if anonymizer:
+                    summary_msg += f"\n🔒 Daten wurden anonymisiert (bereit für LLM-Training)"
+                
+                self.root.after(0, lambda: messagebox.showinfo("Fertig", summary_msg))
             elif not all_results:
                 self._log("Keine Fehler gefunden.")
                 self.root.after(0, lambda: messagebox.showinfo(
@@ -348,7 +468,9 @@ class LogParserApp:
                 ))
         
         except Exception as e:
+            import traceback
             self._log(f"FEHLER: {str(e)}")
+            self._log(traceback.format_exc())
             self.root.after(0, lambda: messagebox.showerror(
                 "Fehler",
                 f"Ein Fehler ist aufgetreten:\n{str(e)}"
