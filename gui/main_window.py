@@ -8,6 +8,8 @@ import threading
 from pathlib import Path
 from datetime import datetime
 from core import LogParser, CSVExporter
+from core.avstumpfl_parser import AVStumpflLogParser
+from core.avstumpfl_exporter import AVStumpflCSVExporter
 
 
 class LogParserApp:
@@ -21,6 +23,7 @@ class LogParserApp:
         self.directories = []
         self.is_parsing = False
         self.parser = None
+        self.parser_mode = tk.StringVar(value="avstumpfl")  # Default: AV Stumpfl Format
         
         self._setup_ui()
     
@@ -36,7 +39,25 @@ class LogParserApp:
             text="LogfileParser",
             font=('Arial', 16, 'bold')
         ).pack(side=tk.LEFT)
+        Parser-Modus Auswahl
+        mode_frame = ttk.LabelFrame(self.root, text="Parser-Modus", padding="10")
+        mode_frame.pack(fill=tk.X, padx=10, pady=5)
         
+        ttk.Radiobutton(
+            mode_frame,
+            text="AV Stumpfl Format (Strukturiertes Log mit Datum/Zeit/Severity/Type/Description)",
+            variable=self.parser_mode,
+            value="avstumpfl"
+        ).pack(anchor=tk.W, pady=2)
+        
+        ttk.Radiobutton(
+            mode_frame,
+            text="Generischer Modus (Einfache Keyword-Suche: error, warning, fatal, critical)",
+            variable=self.parser_mode,
+            value="generic"
+        ).pack(anchor=tk.W, pady=2)
+        
+        # 
         # Verzeichnis-Auswahl Bereich
         dir_frame = ttk.LabelFrame(self.root, text="Verzeichnisse", padding="10")
         dir_frame.pack(fill=tk.X, padx=10, pady=5)
@@ -253,25 +274,9 @@ class LogParserApp:
             )
             return
         
-        self.is_parsing = True
-        self.start_btn.config(state='disabled')
-        self.stop_btn.config(state='normal')
-        self.status_var.set("Parsing läuft...")
-        self.progress.start()
-        
-        self._log("=" * 50)
-        self._log("Parsing gestartet")
-        self._log(f"Verzeichnisse: {len(self.directories)}")
-        
-        # Starte Parsing in separatem Thread
-        thread = threading.Thread(target=self._parse_thread, args=(output_path,))
-        thread.daemon = True
-        thread.start()
-    
-    def _parse_thread(self, output_path: str):
-        """Thread-Funktion für das Parsing"""
-        try:
-            all_results = []
+        selfmode = self.parser_mode.get()
+            
+            self._log(f"Parser-Modus: {'AV Stumpfl Format' if mode == 'avstumpfl' else 'Generischer Modus'}")
             
             for directory in self.directories:
                 if not self.is_parsing:
@@ -279,7 +284,12 @@ class LogParserApp:
                 
                 self._log(f"Durchsuche Verzeichnis: {directory}")
                 
-                parser = LogParser(progress_callback=self._update_progress)
+                # Wähle den passenden Parser
+                if mode == "avstumpfl":
+                    parser = AVStumpflLogParser(progress_callback=self._update_progress)
+                else:
+                    parser = LogParser(progress_callback=self._update_progress)
+                
                 results = parser.parse_directory(directory)
                 all_results.extend(results)
                 
@@ -292,9 +302,36 @@ class LogParserApp:
             
             if self.is_parsing and all_results:
                 self._log(f"Exportiere {len(all_results)} eindeutige Einträge nach CSV...")
-                CSVExporter.export(all_results, output_path)
+                
+                # Wähle den passenden Exporter
+                if mode == "avstumpfl":
+                    AVStumpflCSVExporter.export(all_results, output_path)
+                else:
+                    CSVExporter.export(all_results, output_path)
+                
                 self._log(f"Erfolgreich exportiert: {output_path}")
                 
+                # Berechne Gesamtzahl übersprungener Duplikate
+                total_skipped = sum(p.skipped_duplicates for p in [parser] if hasattr(parser, 'skipped_duplicates'))
+                
+                self.root.after(0, lambda: messagebox.showinfo(
+                    "Fertig",
+                    f"Parsing abgeschlossen!\n\n"
+                    f"Eindeutige Fehler gefunden: {len(all_results)}\n"
+                    f"Duplikate übersprungen: {total_skipped}\n"
+                    f"Ausgabedatei: {output_path}"
+                ))
+            elif not all_results:
+                self._log("Keine Fehler gefunden.")
+                self.root.after(0, lambda: messagebox.showinfo(
+                    "Fertig",
+                    "Parsing abgeschlossen, aber keine Fehler gefunden."
+                ))
+        
+        except Exception as e:
+            self._log(f"FEHLER: {str(e)}")
+            import traceback
+            self._log(traceback.format_exc()
                 # Berechne Gesamtzahl übersprungener Duplikate
                 total_skipped = sum(p.skipped_duplicates for p in [parser] if hasattr(parser, 'skipped_duplicates'))
                 
