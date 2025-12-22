@@ -101,7 +101,14 @@ class LogParserApp:
             text="Entfernen",
             command=self._remove_directory
         ).pack(side=tk.LEFT, padx=2)
-        Export-Optionen Bereich
+        
+        ttk.Button(
+            btn_frame,
+            text="Liste leeren",
+            command=self._clear_directories
+        ).pack(side=tk.LEFT, padx=2)
+        
+        # Export-Optionen Bereich
         export_options_frame = ttk.LabelFrame(self.root, text="Export-Optionen", padding="10")
         export_options_frame.pack(fill=tk.X, padx=10, pady=5)
         

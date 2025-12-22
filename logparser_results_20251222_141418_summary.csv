@@ -1,0 +1,12 @@
+﻿Fehler-Kategorie,Fehlertyp,Anzahl,Severity,Erste Occurrence,Letzte Occurrence,Betroffene Dateien,Beispiel-Beschreibung
+Datei,,1226,error,Sat 01.Nov.  21:05:47.902,Mon 27.Oct.  18:42:52.571,"playback-27103-1.log, playback-27103-2.log, playback-27103-3.log, playback-27103-WRITEABLE.log, play",
+Sonstige,,568,warning,Mon 24.Feb.  09:52:22.246,Wed 05.Nov.  16:11:55.320,"manager-1.log, manager.log, playback-27103-1.log, playback-27103-2.log, playback-27103-3.log, playba",
+Netzwerk,,362,error,Wed 29.Oct.  00:44:48.894,Sat 04.Oct.  11:30:21.953,"playback-27103-1.log, playback-27103-2.log, playback-27103-WRITEABLE.log, rx_log-2.txt, rx_log-3.txt",
+Authentifizierung,,29,error,Mon 29.Jul.  16:03:43.875,Fri 03.Oct.  18:25:18.001,"playback-27103-1.log, utility-27110-1.log, utility-27110-2.log",
+Media,,25,error,Fri 29.Aug.  11:19:28.624,Tue 13.Aug.  11:55:02.570,"playback-27103-WRITEABLE.log, rx_log-1.txt, rx_log-2.txt, rx_log-3.txt, utility-27110-2.log",
+System,,11,error,Wed 05.Nov.  07:37:26.538,Mon 28.Apr.  14:30:29.488,"manager.log, playback-27103-1.log, utility-27110-1.log, utility-27110-3.log",
+Zeitbezogen,,1,warning,Sun 02.Nov.  01:00:01.134,Sun 02.Nov.  01:00:01.134,playback-27103-1.log,
+Modul,,1,warning,Wed 19.Feb.  12:48:28.391,Wed 19.Feb.  12:48:28.391,playback-27103-2.log,
+Sonstige,"Error generating entries
+Exception",1,error,2025-10-17 01:46:31.914,2025-10-17 01:46:31.914,Overlay_2025-10-16.log,"Error generating entries
+Exception: A task was canceled."
