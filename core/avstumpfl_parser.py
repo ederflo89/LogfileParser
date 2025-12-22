@@ -11,6 +11,64 @@ import zipfile
 class AVStumpflLogParser:
     """Parst AV Stumpfl Logfiles mit spezifischem Format"""
     
+    @staticmethod
+    def _normalize_for_deduplication(text: str) -> str:
+        """
+        Normalisiert Text für Duplikatserkennung durch Ersetzen variabler Teile
+        
+        Args:
+            text: Zu normalisierender Text
+            
+        Returns:
+            Normalisierter Text mit Platzhaltern
+        """
+        normalized = text
+        
+        # Entferne Anzahl-Präfix (z.B. "17x similar to...", "5x similar to...")
+        normalized = re.sub(r'^\d+x\s+similar\s+to\s+', '', normalized, flags=re.IGNORECASE)
+        
+        # Entferne umschließende Anführungszeichen
+        normalized = re.sub(r"^'(.*)'$", r'\1', normalized)
+        
+        # Ersetze IP-Adressen durch Platzhalter
+        normalized = re.sub(r'\b(?:\d{1,3}\.){3}\d{1,3}\b', '<IP>', normalized)
+        
+        # Ersetze komplette Dateinamen mit Zahlen und Extensions
+        # z.B. GH_DP4_SKIE_A_5760X1416_202510021510.mov → <FILE>
+        normalized = re.sub(r'[\w_-]+\d+[\w_-]*\.(mov|mp4|avi|mkv|pfm|png|jpg|jpeg|fbx|obj|log|txt)', '<FILE>', normalized, flags=re.IGNORECASE)
+        
+        # Ersetze verbleibende Dateinamen mit Extensions
+        normalized = re.sub(r'[\w_-]+\.(mov|mp4|avi|mkv|pfm|png|jpg|jpeg|fbx|obj|log|txt)', '<FILE>', normalized, flags=re.IGNORECASE)
+        
+        # Ersetze UNC-Pfade (\\server\share\path\to\file)
+        # Muss NACH Dateinamen-Ersetzung kommen
+        normalized = re.sub(r'\\\\[^\\]+\\[^\\]+(?:\\[^\\\'\"]+)*', '<UNC_PATH>', normalized)
+        
+        # Ersetze Windows-Pfade (D:\path\to\file)
+        normalized = re.sub(r'[A-Z]:[\\\/](?:[^\\\/\'\"\s]+[\\\/])*[^\\\/\'\"\s]*', '<WIN_PATH>', normalized)
+        
+        # Ersetze srv:// URLs
+        normalized = re.sub(r'srv://[^\s\'\"]+', '<SRV_URL>', normalized)
+        
+        # Ersetze Unix-Pfade (/path/to/file oder path/to/file)
+        normalized = re.sub(r'(?:^|[\s\'\"])/(?:[^/\s\'\"]+/)*[^/\s\'\"]+', '<UNIX_PATH>', normalized)
+        normalized = re.sub(r'(?:^|[\s\'\"])[\w_-]+(?:/[\w_.-]+)+', '<REL_PATH>', normalized)
+        
+        # Ersetze Zahlenfolgen in verbleibenden Namen (z.B. warp_12345_67)
+        normalized = re.sub(r'_\d+(?:_\d+)*', '_<NUM>', normalized)
+        
+        # Ersetze Zeitstempel und Datums-Patterns
+        normalized = re.sub(r'\d{4}[-_]\d{2}[-_]\d{2}[-_]?\d{0,6}', '<TIMESTAMP>', normalized)
+        normalized = re.sub(r'\d{8,}', '<LONGNUM>', normalized)
+        
+        # Ersetze Port-Nummern (nach IP oder Hostname)
+        normalized = re.sub(r':\d{4,5}\b', ':<PORT>', normalized)
+        
+        # Ersetze verbleibende längere Zahlenfolgen
+        normalized = re.sub(r'\b\d{4,}\b', '<NUM>', normalized)
+        
+        return normalized
+    
     # Severity-Level Mapping
     SEVERITY_MAP = {
         'V': 'verbose',
@@ -174,9 +232,12 @@ class AVStumpflLogParser:
                     description = '\n'.join(description_lines) if description_lines else ''
                     
                     # Erstelle eindeutigen Schlüssel für Duplikatserkennung
-                    # Verwende Type + erste Zeile der Description (ohne Pfade/IPs)
+                    # Normalisiere Type und Description um variable Teile zu entfernen
+                    normalized_type = self._normalize_for_deduplication(log_type)
                     first_desc_line = description_lines[0] if description_lines else ''
-                    error_key = f"{severity_code}|{log_type}|{first_desc_line}"
+                    normalized_desc = self._normalize_for_deduplication(first_desc_line)
+                    
+                    error_key = f"{severity_code}|{normalized_type}|{normalized_desc}"
                     
                     if error_key not in self.seen_errors:
                         self.seen_errors.add(error_key)

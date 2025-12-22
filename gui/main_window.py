@@ -7,6 +7,9 @@ from tkinter import ttk, filedialog, messagebox
 import threading
 from pathlib import Path
 from datetime import datetime
+import zipfile
+import tempfile
+import shutil
 from core import LogParser, CSVExporter
 from core.avstumpfl_parser import AVStumpflLogParser
 from core.avstumpfl_exporter import AVStumpflCSVExporter
@@ -26,6 +29,7 @@ class LogParserApp:
         self.is_parsing = False
         self.parser = None
         self.parser_mode = tk.StringVar(value="avstumpfl")  # Default: AV Stumpfl Format
+        self.temp_dirs = []  # Temporäre Verzeichnisse für extrahierte ZIP-Dateien
         
         # Export-Optionen
         self.export_detailed = tk.BooleanVar(value=True)
@@ -273,12 +277,53 @@ class LogParserApp:
         ).pack(side=tk.RIGHT, padx=2)
     
     def _add_directory(self):
-        """Fügt ein Verzeichnis zur Liste hinzu"""
-        directory = filedialog.askdirectory(title="Verzeichnis auswählen")
-        if directory and directory not in self.directories:
-            self.directories.append(directory)
-            self.dir_listbox.insert(tk.END, directory)
-            self._log(f"Verzeichnis hinzugefügt: {directory}")
+        """Fügt ein Verzeichnis oder ZIP-Datei zur Liste hinzu"""
+        # Frage Benutzer ob Verzeichnis oder ZIP-Datei
+        choice = messagebox.askyesnocancel(
+            "Quelle auswählen",
+            "Möchten Sie ein Verzeichnis auswählen?\n\n"
+            "Ja = Verzeichnis auswählen\n"
+            "Nein = ZIP-Datei auswählen\n"
+            "Abbrechen = Abbrechen"
+        )
+        
+        if choice is None:  # Abbrechen
+            return
+        elif choice:  # Verzeichnis
+            directory = filedialog.askdirectory(title="Verzeichnis auswählen")
+            if directory and directory not in self.directories:
+                self.directories.append(directory)
+                self.dir_listbox.insert(tk.END, directory)
+                self._log(f"Verzeichnis hinzugefügt: {directory}")
+        else:  # ZIP-Datei
+            zip_path = filedialog.askopenfilename(
+                title="ZIP-Datei auswählen",
+                filetypes=[("ZIP files", "*.zip"), ("All files", "*.*")]
+            )
+            if zip_path:
+                self._add_zip_file(zip_path)
+    
+    def _add_zip_file(self, zip_path: str):
+        """Extrahiert ZIP-Datei in temporäres Verzeichnis"""
+        try:
+            # Erstelle temporäres Verzeichnis
+            temp_dir = tempfile.mkdtemp(prefix="logparser_zip_")
+            self.temp_dirs.append(temp_dir)
+            
+            # Extrahiere ZIP
+            self._log(f"Extrahiere ZIP-Datei: {Path(zip_path).name}")
+            with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+                zip_ref.extractall(temp_dir)
+            
+            # Füge temporäres Verzeichnis zur Liste hinzu
+            self.directories.append(temp_dir)
+            display_name = f"📦 {Path(zip_path).name} → {temp_dir}"
+            self.dir_listbox.insert(tk.END, display_name)
+            self._log(f"ZIP extrahiert: {len(list(Path(temp_dir).rglob('*')))} Dateien gefunden")
+            
+        except Exception as e:
+            messagebox.showerror("Fehler", f"ZIP-Datei konnte nicht extrahiert werden:\n{str(e)}")
+            self._log(f"FEHLER beim Extrahieren: {str(e)}")
     
     def _remove_directory(self):
         """Entfernt das ausgewählte Verzeichnis"""
@@ -292,6 +337,7 @@ class LogParserApp:
     
     def _clear_directories(self):
         """Leert die Verzeichnisliste"""
+        self._cleanup_temp_dirs()
         self.directories.clear()
         self.dir_listbox.delete(0, tk.END)
         self._log("Verzeichnisliste geleert")
@@ -486,6 +532,17 @@ class LogParserApp:
         finally:
             self._parsing_finished()
     
+    def _cleanup_temp_dirs(self):
+        """Löscht alle temporären Verzeichnisse"""
+        for temp_dir in self.temp_dirs:
+            try:
+                if Path(temp_dir).exists():
+                    shutil.rmtree(temp_dir)
+                    self._log(f"Temporäres Verzeichnis gelöscht: {temp_dir}")
+            except Exception as e:
+                self._log(f"Warnung: Konnte temporäres Verzeichnis nicht löschen: {e}")
+        self.temp_dirs.clear()
+    
     def _stop_parsing(self):
         """Bricht den Parsing-Prozess ab"""
         self.is_parsing = False
@@ -494,6 +551,8 @@ class LogParserApp:
     def _parsing_finished(self):
         """Wird aufgerufen wenn das Parsing beendet ist"""
         self.root.after(0, self._reset_ui)
+        # Cleanup nach Parsing
+        self._cleanup_temp_dirs()
     
     def _reset_ui(self):
         """Setzt die UI zurück"""
@@ -505,4 +564,11 @@ class LogParserApp:
     
     def run(self):
         """Startet die Anwendung"""
+        # Cleanup beim Schließen
+        self.root.protocol("WM_DELETE_WINDOW", self._on_closing)
         self.root.mainloop()
+    
+    def _on_closing(self):
+        """Wird beim Schließen des Fensters aufgerufen"""
+        self._cleanup_temp_dirs()
+        self.root.destroy()

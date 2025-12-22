@@ -1,0 +1,11 @@
+﻿Fehler-Kategorie,Fehlertyp,Anzahl,Severity,Erste Occurrence,Letzte Occurrence,Betroffene Dateien,Beispiel-Beschreibung
+Netzwerk,,75,error,Thu 08.May.  12:25:51.506,Fri 17.Oct.  01:35:48.491,"playback-27103-1.log, playback-27103-2.log, rx_log-2.txt, rx_log-3.txt, utility-27110-1.log, utility",
+Sonstige,,69,warning,Sat 04.Oct.  18:50:29.264,Thu 27.Nov.  18:23:45.023,"manager.log, playback-27103-1.log, playback-27103-2.log, playback-27103-3.log, playback-27103.log, r",
+Datei,,33,error,Sat 04.Oct.  14:07:34.892,Wed 08.Oct.  15:05:47.121,"playback-27103-1.log, playback-27103-2.log, utility-27110-1.log, utility-27110-2.log, utility-27110-",
+System,,11,error,Sat 04.Oct.  14:08:29.277,Wed 05.Nov.  07:37:26.538,"playback-27103-1.log, utility-27110-1.log, utility-27110-3.log",
+Media,,9,error,Fri 29.Aug.  11:19:28.624,Wed 01.Oct.  12:27:20.828,"rx_log-2.txt, rx_log-3.txt, utility-27110-2.log",
+Zeitbezogen,,2,warning,Sun 12.Oct.  05:12:46.890,Sun 02.Nov.  01:00:01.134,playback-27103-1.log,
+Modul,,1,warning,Wed 19.Feb.  12:48:28.391,Wed 19.Feb.  12:48:28.391,playback-27103-2.log,
+Sonstige,"Error generating entries
+Exception",1,error,2025-10-17 01:46:31.914,2025-10-17 01:46:31.914,Overlay_2025-10-16.log,"Error generating entries
+Exception: A task was canceled."
