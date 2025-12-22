@@ -28,10 +28,15 @@ class AVStumpflCSVExporter:
             writer = csv.writer(f, delimiter=',', quotechar='"', quoting=csv.QUOTE_MINIMAL)
             
             # Header schreiben
-            writer.writerow(['Logfilename', 'Datum', 'Zeit', 'Severity', 'Type/Source', 'Description'])
+            writer.writerow(['Ordner', 'Dateiname', 'Datum', 'Zeit', 'Severity', 'Type/Source', 'Description'])
             
             # Daten schreiben
             for logfile, date, time, severity, log_type, description in results:
-                writer.writerow([logfile, date, time, severity, log_type, description])
+                # Teile Pfad in Ordner und Dateiname auf
+                path = Path(logfile)
+                directory = str(path.parent) if path.parent != Path('.') else ''
+                filename = path.name
+                
+                writer.writerow([directory, filename, date, time, severity, log_type, description])
         
         return output_file

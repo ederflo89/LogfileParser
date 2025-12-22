@@ -28,10 +28,15 @@ class CSVExporter:
             writer = csv.writer(f, delimiter=',', quotechar='"', quoting=csv.QUOTE_MINIMAL)
             
             # Header schreiben
-            writer.writerow(['Logfilename', 'Severity', 'Eintragstext'])
+            writer.writerow(['Ordner', 'Dateiname', 'Severity', 'Eintragstext'])
             
             # Daten schreiben
             for logfile, severity, text in results:
-                writer.writerow([logfile, severity, text])
+                # Teile Pfad in Ordner und Dateiname auf
+                path = Path(logfile)
+                directory = str(path.parent) if path.parent != Path('.') else ''
+                filename = path.name
+                
+                writer.writerow([directory, filename, severity, text])
         
         return output_file
