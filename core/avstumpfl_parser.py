@@ -18,15 +18,31 @@ class AVStumpflLogParser:
         'E': 'error',  # Event oder Error
         'W': 'warning',
         'F': 'fatal',
-        'C': 'critical'
+        'C': 'critical',
+        'INFO': 'info',
+        'ERROR': 'error',
+        'WARN': 'warning',
+        'WARNING': 'warning',
+        'FATAL': 'fatal',
+        'CRITICAL': 'critical'
     }
     
     # Filter: Nur diese Severities werden extrahiert
-    FILTER_SEVERITIES = {'E', 'W', 'F', 'C'}
+    FILTER_SEVERITIES = {'E', 'W', 'F', 'C', 'ERROR', 'WARN', 'WARNING', 'FATAL', 'CRITICAL'}
     
-    # Regex für Log-Eintrag: DD.MM.YYYY HH:MM:SS [TAB] SEVERITY [TAB] Type
-    LOG_ENTRY_PATTERN = re.compile(
+    # Regex für Log-Eintrag Format 1: DD.MM.YYYY HH:MM:SS [TAB] SEVERITY [TAB] Type
+    LOG_ENTRY_PATTERN_1 = re.compile(
         r'^(\d{2}\.\d{2}\.\d{4})\s+(\d{2}:\d{2}:\d{2})\s+([VIWFCE])\s+(.+)$'
+    )
+    
+    # Regex für Log-Eintrag Format 2: YYYY-MM-DD HH:MM:SS.mmm [LEVEL] Class.Method
+    LOG_ENTRY_PATTERN_2 = re.compile(
+        r'^(\d{4}-\d{2}-\d{2})\s+(\d{2}:\d{2}:\d{2}\.\d{3})\s+\[(INFO|ERROR|WARN|WARNING|FATAL|CRITICAL)\]\s+(.+)$'
+    )
+    
+    # Regex für Log-Eintrag Format 3: Day DD.Mon. HH:MM:SS.mmm LEVEL Message
+    LOG_ENTRY_PATTERN_3 = re.compile(
+        r'^(\w{3}\s+\d{2}\.\w{3}\.\s+)(\d{2}:\d{2}:\d{2}\.\d{3})\s+(INFO|ERROR|WARN|WARNING|FATAL|CRITICAL)\s+(.+)$'
     )
     
     def __init__(self, progress_callback: Callable = None):
@@ -105,8 +121,26 @@ class AVStumpflLogParser:
         while i < len(lines):
             line = lines[i].rstrip()
             
-            # Prüfe ob es ein Log-Eintrag ist
-            match = self.LOG_ENTRY_PATTERN.match(line)
+            # Prüfe alle drei Log-Formate
+            match = None
+            pattern_type = None
+            
+            # Format 1: DD.MM.YYYY HH:MM:SS SEVERITY Type
+            match = self.LOG_ENTRY_PATTERN_1.match(line)
+            if match:
+                pattern_type = 1
+            
+            # Format 2: YYYY-MM-DD HH:MM:SS.mmm [LEVEL] Class.Method
+            if not match:
+                match = self.LOG_ENTRY_PATTERN_2.match(line)
+                if match:
+                    pattern_type = 2
+            
+            # Format 3: Day DD.Mon. HH:MM:SS.mmm LEVEL Message
+            if not match:
+                match = self.LOG_ENTRY_PATTERN_3.match(line)
+                if match:
+                    pattern_type = 3
             
             if match:
                 date = match.group(1)
@@ -125,7 +159,9 @@ class AVStumpflLogParser:
                         next_line = lines[i].rstrip()
                         
                         # Prüfe ob es ein neuer Log-Eintrag ist
-                        if self.LOG_ENTRY_PATTERN.match(next_line):
+                        if (self.LOG_ENTRY_PATTERN_1.match(next_line) or 
+                            self.LOG_ENTRY_PATTERN_2.match(next_line) or
+                            self.LOG_ENTRY_PATTERN_3.match(next_line)):
                             break
                         
                         # Füge eingerückte Zeile zur Description hinzu
