@@ -24,8 +24,9 @@ class AVStumpflLogParser:
         """
         normalized = text
         
-        # Entferne Anzahl-Präfix (z.B. "17x similar to...", "5x similar to...")
-        normalized = re.sub(r'^\d+x\s+similar\s+to\s+', '', normalized, flags=re.IGNORECASE)
+        # Entferne generische Anzahl-Präfixe (z.B. "9x ...", "123 x ...", "17x similar to...")
+        # Dies muss VOR allen anderen Normalisierungen kommen
+        normalized = re.sub(r'^\d+\s*x\s+', '', normalized, flags=re.IGNORECASE)
         
         # Entferne umschließende Anführungszeichen
         normalized = re.sub(r"^'(.*)'$", r'\1', normalized)
