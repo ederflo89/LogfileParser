@@ -143,8 +143,9 @@ class AVStumpflLogParser:
         
         # Pattern: "invalid projection matrix (LRTB: numbers / Z-NF: numbers)"
         # → invalid projection matrix
+        # Wichtig: .*? statt [^)]+ weil Parameter auch () enthalten können (z.B. -nan(ind))
         normalized = re.sub(
-            r"invalid projection matrix \(LRTB:[^)]+\s*/\s*Z-NF:[^)]+\)",
+            r"invalid projection matrix \(LRTB:.*?Z-NF:.*?\)",
             "invalid projection matrix",
             normalized,
             flags=re.IGNORECASE
@@ -376,8 +377,15 @@ class AVStumpflLogParser:
                     # Erstelle eindeutigen Schlüssel für Duplikatserkennung
                     # Normalisiere Type und Description um variable Teile zu entfernen
                     normalized_type = self._normalize_for_deduplication(log_type)
-                    first_desc_line = description_lines[0] if description_lines else ''
-                    normalized_desc = self._normalize_for_deduplication(first_desc_line)
+                    
+                    # Bei Format 3 steht die Message in log_type, description_lines ist leer
+                    # Dann verwende log_type AUCH für normalized_desc zur besseren Duplikaterkennung
+                    if description_lines:
+                        first_desc_line = description_lines[0]
+                        normalized_desc = self._normalize_for_deduplication(first_desc_line)
+                    else:
+                        # Keine Description → verwende log_type als Basis für Duplikaterkennung
+                        normalized_desc = normalized_type
                     
                     error_key = f"{severity_code}|{normalized_type}|{normalized_desc}"
                     

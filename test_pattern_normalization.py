@@ -71,6 +71,13 @@ test_cases = [
     ("invalid projection matrix (LRTB: -0.0487481, -0.0487481, 0, 0 / Z-NF: 10, 5e+13)",
      "invalid projection matrix"),
     
+    # WICHTIG: Mit -nan(ind) - Pattern muss auch () innerhalb matchen!
+    ("invalid projection matrix (LRTB: -nan(ind), -nan(ind), -nan(ind), -nan(ind) / Z-NF: 10, 5e+13)",
+     "invalid projection matrix"),
+    
+    ("invalid projection matrix (LRTB: 22.3848, -22.3849, 5.77201, -5.77202 / Z-NF: 10, 1e+14)",
+     "invalid projection matrix"),
+    
     ("automatically reloaded texture 'srv:Data/.../*.pfm' disappeared",
      "automatically reloaded texture disappeared"),
     
