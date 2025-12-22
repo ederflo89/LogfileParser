@@ -492,6 +492,17 @@ class LogParserApp:
             directory = self.directories[index]
             self.directories.pop(index)
             self.dir_listbox.delete(index)
+            
+            # Wenn es ein temp-Verzeichnis ist, cleanup durchführen
+            if directory in self.temp_dirs:
+                self.temp_dirs.remove(directory)
+                try:
+                    if Path(directory).exists():
+                        shutil.rmtree(directory)
+                        self._log(f"Temporäres Verzeichnis gelöscht: {directory}")
+                except Exception as e:
+                    self._log(f"Warnung: Konnte temporäres Verzeichnis nicht löschen: {e}")
+            
             self._log(f"Verzeichnis entfernt: {directory}")
     
     def _clear_directories(self):
@@ -733,8 +744,9 @@ class LogParserApp:
     def _parsing_finished(self):
         """Wird aufgerufen wenn das Parsing beendet ist"""
         self.root.after(0, self._reset_ui)
-        # Cleanup nach Parsing
-        self._cleanup_temp_dirs()
+        # KEIN Cleanup nach Parsing - temp_dirs werden weiter benötigt
+        # für erneutes Parsing mit anderen Settings
+        # Cleanup erfolgt nur beim Schließen oder manuellen Entfernen
     
     def _reset_ui(self):
         """Setzt die UI zurück"""
