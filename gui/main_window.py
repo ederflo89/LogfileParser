@@ -321,10 +321,14 @@ class LogParserApp:
         
         file_path_obj = Path(file_path)
         
-        # Prüfe ob ZIP-Datei
-        if file_path_obj.suffix.lower() == '.zip':
+        # Prüfe ob ZIP-Datei (robuste Erkennung)
+        is_zip = file_path_obj.suffix.lower() == '.zip' or zipfile.is_zipfile(file_path)
+        
+        if is_zip:
+            self._log(f"ZIP-Datei erkannt: {file_path_obj.name}")
             self._add_zip_file(file_path)
         else:
+            self._log(f"Log-Datei erkannt: {file_path_obj.name}")
             # Füge Verzeichnis der Datei hinzu (damit die Datei geparst wird)
             parent_dir = str(file_path_obj.parent)
             if parent_dir not in self.directories:
