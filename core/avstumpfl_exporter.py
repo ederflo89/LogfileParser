@@ -125,14 +125,11 @@ class AVStumpflCSVExporter:
                     row.append(error_category)
                 row.extend([date, time, severity, log_type, clean_description])
                 
-                # Duplikaterkennung nach Anonymisierung
+                # Duplikaterkennung IMMER durchführen (unabhängig von Anonymisierung)
                 # Nutze Severity + Type + Description als Schlüssel
-                if anonymizer:
-                    dedup_key = f"{severity}|{log_type}|{clean_description}"
-                    if dedup_key not in seen_after_anonymization:
-                        seen_after_anonymization.add(dedup_key)
-                        processed_rows.append(row)
-                else:
+                dedup_key = f"{severity}|{log_type}|{clean_description}"
+                if dedup_key not in seen_after_anonymization:
+                    seen_after_anonymization.add(dedup_key)
                     processed_rows.append(row)
         
         # Schreibe alle unique Zeilen
