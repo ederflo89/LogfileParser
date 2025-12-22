@@ -3,6 +3,7 @@ CSV Exporter für AV Stumpfl Log-Parsing-Ergebnisse
 """
 
 import csv
+import re
 from typing import List, Tuple, Optional
 from pathlib import Path
 from .error_categorizer import ErrorCategorizer
@@ -10,6 +11,41 @@ from .error_categorizer import ErrorCategorizer
 
 class AVStumpflCSVExporter:
     """Exportiert AV Stumpfl Log-Parsing-Ergebnisse in CSV-Dateien"""
+    
+    @staticmethod
+    def _normalize_filename(filename: str) -> str:
+        """Entfernt Split-Suffixe aus Dateinamen"""
+        # Entferne -1, -2, -3 etc. und -WRITEABLE Suffixe
+        normalized = re.sub(r'-\d+\.log$', '.log', filename)
+        normalized = re.sub(r'-WRITEABLE\.log$', '.log', normalized)
+        return normalized
+    
+    @staticmethod
+    def _extract_count_from_description(description: str) -> Tuple[int, str]:
+        """Extrahiert Anzahl aus Description wie '7x 'End of file''"""
+        match = re.match(r'^(\d+)x\s+(.+)$', description)
+        if match:
+            count = int(match.group(1))
+            clean_desc = match.group(2).strip("'\"")
+            return count, clean_desc
+        return 1, description
+    
+    @staticmethod
+    def _shorten_path_in_description(description: str) -> str:
+        """Kürzt lange Pfade in Beschreibungen"""
+        # Kürze Windows-Pfade (behalte nur letzten Teil)
+        description = re.sub(
+            r'[A-Z]:[\\\\][^\\\\]+[\\\\][^\\\\]+[\\\\]([^\\\\]+[\\\\])*',
+            lambda m: '..\\\\',
+            description
+        )
+        # Kürze UNC-Pfade
+        description = re.sub(
+            r'\\\\\\\\[^\\\\]+\\\\[^\\\\]+\\\\([^\\\\]+\\\\)*',
+            lambda m: '\\\\\\\\...\\\\',
+            description
+        )
+        return description
     
     @staticmethod
     def export(results: List[Tuple[str, str, str, str, str, str]], output_path: str, 
@@ -33,7 +69,7 @@ class AVStumpflCSVExporter:
             writer = csv.writer(f, delimiter=',', quotechar='"', quoting=csv.QUOTE_MINIMAL)
             
             # Header schreiben
-            header = ['Log-Kategorie', 'Ordner', 'Dateiname']
+            header = ['Log-Kategorie', 'Ordner', 'Logfile-Gruppe', 'Dateiname-Original', 'Anzahl']
             if add_category:
                 header.append('Fehler-Kategorie')
             header.extend(['Datum', 'Zeit', 'Severity', 'Type/Source', 'Description'])
@@ -43,7 +79,16 @@ class AVStumpflCSVExporter:
             for logfile, date, time, severity, log_type, description in results:
                 # Teile Pfad in Komponenten auf
                 path = Path(logfile)
-                filename = path.name
+                filename_original = path.name
+                
+                # Normalisiere Dateinamen (entferne Split-Suffixe)
+                filename_normalized = AVStumpflCSVExporter._normalize_filename(filename_original)
+                
+                # Extrahiere Anzahl aus Description
+                count, clean_description = AVStumpflCSVExporter._extract_count_from_description(description)
+                
+                # Kürze Pfade in Description
+                clean_description = AVStumpflCSVExporter._shorten_path_in_description(clean_description)
                 
                 # Extrahiere Log-Kategorie (z.B. pixera_hub_logs, rx_logs)
                 parts = path.parts
@@ -69,19 +114,20 @@ class AVStumpflCSVExporter:
                 # Anonymisiere Daten wenn Anonymizer vorhanden
                 if anonymizer:
                     remaining_path = anonymizer.anonymize_path(remaining_path) if remaining_path else ''
-                    filename = anonymizer.anonymize_filename(filename)
+                    filename_normalized = anonymizer.anonymize_filename(filename_normalized)
+                    filename_original = anonymizer.anonymize_filename(filename_original)
                     log_type = anonymizer.anonymize_message(log_type)
-                    description = anonymizer.anonymize_message(description)
+                    clean_description = anonymizer.anonymize_message(clean_description)
                 
-                # Erstelle Zeile
-                row = [log_category, remaining_path, filename]
+                # Erstelle Zeile mit neuen Spalten
+                row = [log_category, remaining_path, filename_normalized, filename_original, count]
                 
                 # Fehler-Kategorie hinzufügen wenn aktiviert
                 if add_category and categorizer:
-                    error_category = categorizer.categorize(description, log_type)
+                    error_category = categorizer.categorize(clean_description, log_type)
                     row.append(error_category)
                 
-                row.extend([date, time, severity, log_type, description])
+                row.extend([date, time, severity, log_type, clean_description])
                 writer.writerow(row)
         
         return output_file
