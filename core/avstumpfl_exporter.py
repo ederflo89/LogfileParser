@@ -69,6 +69,9 @@ class AVStumpflCSVExporter:
         processed_rows = []
         seen_after_anonymization = set()
         
+        print(f"\n[DEBUG] Exporter: {len(results)} Results vom Parser erhalten")
+        print(f"[DEBUG] Anonymisierung: {'Ja' if anonymizer else 'Nein'}")
+        
         # Verarbeite alle Einträge
         for logfile, date, time, severity, log_type, description in results:
                 # Teile Pfad in Komponenten auf
@@ -134,6 +137,9 @@ class AVStumpflCSVExporter:
                         processed_rows.append(row)
                 else:
                     processed_rows.append(row)
+        
+        print(f"[DEBUG] Exporter: {len(processed_rows)} Zeilen nach Verarbeitung")
+        print(f"[DEBUG] Post-Anonymisierungs-Duplikate gefiltert: {len(results) - len(processed_rows)}")
         
         # Schreibe alle unique Zeilen
         with open(output_file, 'w', newline='', encoding='utf-8-sig') as f:

@@ -616,16 +616,22 @@ class LogParserApp:
             else:
                 parser = LogParser(progress_callback=self._update_progress)
             
-            for directory in self.directories:
+            self._log(f"Parser erstellt (ID: {id(parser)}) - seen_errors wird über ALLE Verzeichnisse geteilt")
+            
+            for idx, directory in enumerate(self.directories, 1):
                 if not self.is_parsing:
                     break
                 
-                self._log(f"Durchsuche Verzeichnis: {directory}")
+                self._log(f"[{idx}/{len(self.directories)}] Durchsuche Verzeichnis: {directory}")
                 
                 # Verwende denselben Parser für alle Verzeichnisse
                 # So werden identische Fehler über alle Logfiles nur einmal erfasst
+                results_before = len(all_results)
                 results = parser.parse_directory(directory)
                 all_results.extend(results)
+                results_added = len(all_results) - results_before
+                
+                self._log(f"  → {results_added} neue unique Fehler (Duplikate übersprungen: {parser.skipped_duplicates})")
                 
                 # Zeige Statistik inkl. übersprungener Duplikate
                 unique_count = len(all_results)
