@@ -353,6 +353,10 @@ class LogParserApp:
         progress_dialog.transient(self.root)
         progress_dialog.grab_set()
         
+        # Verhindere Schließen während Extrahierung
+        extraction_complete = threading.Event()
+        progress_dialog.protocol("WM_DELETE_WINDOW", lambda: None)
+        
         # Status-Label
         status_label = ttk.Label(
             progress_dialog,
@@ -430,13 +434,27 @@ class LogParserApp:
                     self.root.after(0, lambda msg=error_msg: self._log(msg))
                     self.root.after(0, lambda: detail_label.config(text="✗ Fehler beim Extrahieren", foreground='red'))
             
-            # Schließe Dialog
-            self.root.after(100, progress_dialog.destroy)
-            self.root.after(200, lambda: self._log(f"✓ {len(zip_files)} ZIP-Dateien erfolgreich extrahiert"))
+            # Markiere Extrahierung als abgeschlossen
+            extraction_complete.set()
+            
+            # Schließe Dialog nach Abschluss
+            self.root.after(0, progress_dialog.destroy)
+            self.root.after(100, lambda: self._log(f"✓ {len(zip_files)} ZIP-Dateien erfolgreich extrahiert"))
         
-        # Starte Thread
-        thread = threading.Thread(target=extract_worker, daemon=True)
+        # Starte Thread (NICHT als daemon, damit er zu Ende läuft)
+        thread = threading.Thread(target=extract_worker, daemon=False)
         thread.start()
+        
+        # Warte auf Abschluss der Extrahierung (mit Timeout)
+        def wait_for_extraction():
+            if extraction_complete.wait(timeout=0.1):
+                # Extrahierung abgeschlossen
+                return
+            else:
+                # Noch nicht fertig, prüfe erneut
+                self.root.after(100, wait_for_extraction)
+        
+        wait_for_extraction()
     
     def _add_zip_file(self, zip_path: str):
         """Extrahiert ZIP-Datei in temporäres Verzeichnis"""
