@@ -28,8 +28,12 @@ class AVStumpflLogParser:
         # Dies muss VOR allen anderen Normalisierungen kommen
         normalized = re.sub(r'^\d+\s*x\s+', '', normalized, flags=re.IGNORECASE)
         
+        # Entferne "similar to '" nach Count-Prefix (z.B. "24x similar to 'error'" → "error")
+        normalized = re.sub(r'^similar\s+to\s+["\'](.+)["\']$', r'\1', normalized, flags=re.IGNORECASE)
+        
         # Entferne umschließende Anführungszeichen
         normalized = re.sub(r"^'(.*)'$", r'\1', normalized)
+        normalized = re.sub(r'^"(.*)"$', r'\1', normalized)
         
         # ===== PATTERN-BASIERTE NORMALISIERUNG (vor einzelnen Ersetzungen) =====
         
