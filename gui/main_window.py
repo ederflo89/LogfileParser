@@ -609,18 +609,21 @@ class LogParserApp:
             if anonymizer:
                 self._log("Anonymisierung aktiviert (für LLM-Training)")
             
+            # Erstelle EINEN Parser für alle Verzeichnisse
+            # Damit funktioniert die globale Duplikaterkennung über alle Logfiles hinweg
+            if mode == "avstumpfl":
+                parser = AVStumpflLogParser(progress_callback=self._update_progress)
+            else:
+                parser = LogParser(progress_callback=self._update_progress)
+            
             for directory in self.directories:
                 if not self.is_parsing:
                     break
                 
                 self._log(f"Durchsuche Verzeichnis: {directory}")
                 
-                # Wähle den passenden Parser
-                if mode == "avstumpfl":
-                    parser = AVStumpflLogParser(progress_callback=self._update_progress)
-                else:
-                    parser = LogParser(progress_callback=self._update_progress)
-                
+                # Verwende denselben Parser für alle Verzeichnisse
+                # So werden identische Fehler über alle Logfiles nur einmal erfasst
                 results = parser.parse_directory(directory)
                 all_results.extend(results)
                 

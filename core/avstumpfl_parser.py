@@ -259,15 +259,17 @@ class AVStumpflLogParser:
         """
         Durchsucht ein Verzeichnis rekursiv nach Logfiles
         
+        WICHTIG: seen_errors wird NICHT zurückgesetzt, damit identische Fehler
+        über mehrere Verzeichnisse/Logfiles hinweg nur einmal erfasst werden.
+        
         Args:
             directory_path: Pfad zum Verzeichnis
             
         Returns:
             Liste von Tupeln (Logfilename, Datum, Zeit, Severity, Type, Description)
         """
-        self.results = []
-        self.seen_errors = set()
-        self.skipped_duplicates = 0
+        # NICHT zurücksetzen: self.seen_errors - damit globale Duplikaterkennung funktioniert
+        # results und skipped_duplicates werden auch NICHT zurückgesetzt für kumulative Statistik
         directory = Path(directory_path)
         
         if not directory.exists():
