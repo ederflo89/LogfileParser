@@ -31,6 +31,7 @@ class LogParserApp:
         self.parser = None
         self.parser_mode = tk.StringVar(value="avstumpfl")  # Default: AV Stumpfl Format
         self.temp_dirs = []  # Temporäre Verzeichnisse für extrahierte ZIP-Dateien
+        self.custom_temp_dir = None  # Benutzerdefinierter Temp-Ordner für ZIP-Extraktion
         
         # Cleanup alter temp-Verzeichnisse beim Start
         self._cleanup_old_temp_dirs()
@@ -179,12 +180,50 @@ class LogParserApp:
             foreground='gray'
         ).pack(anchor=tk.W, padx=20)
         
-        # 
+        # Temp-Ordner Konfiguration
+        temp_config_frame = ttk.LabelFrame(self.root, text="ZIP-Extraktion Temp-Ordner", padding="10")
+        temp_config_frame.pack(fill=tk.X, padx=10, pady=5)
+        
+        # Info-Label
+        ttk.Label(
+            temp_config_frame,
+            text="Wähle ein Laufwerk mit ausreichend Speicherplatz für temporäre ZIP-Extraktion:",
+            font=('Arial', 9)
+        ).pack(anchor=tk.W, pady=(0, 5))
+        
+        # Temp-Pfad Anzeige und Auswahl
+        temp_path_frame = ttk.Frame(temp_config_frame)
+        temp_path_frame.pack(fill=tk.X, pady=2)
+        
+        self.temp_dir_var = tk.StringVar(value="Standard (System-Temp)")
+        temp_entry = ttk.Entry(
+            temp_path_frame,
+            textvariable=self.temp_dir_var,
+            state='readonly'
+        )
+        temp_entry.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, 5))
+        
         ttk.Button(
-            btn_frame,
-            text="Liste leeren",
-            command=self._clear_directories
+            temp_path_frame,
+            text="Durchsuchen...",
+            command=self._select_temp_directory
         ).pack(side=tk.LEFT, padx=2)
+        
+        ttk.Button(
+            temp_path_frame,
+            text="Zurücksetzen",
+            command=self._reset_temp_directory
+        ).pack(side=tk.LEFT, padx=2)
+        
+        # Info über verfügbaren Speicherplatz
+        self.temp_space_label = ttk.Label(
+            temp_config_frame,
+            text="",
+            font=('Arial', 8),
+            foreground='gray'
+        )
+        self.temp_space_label.pack(anchor=tk.W, padx=5)
+        self._update_temp_space_info()
         
         # Ausgabe-Datei Bereich
         output_frame = ttk.LabelFrame(self.root, text="Ausgabe-Datei", padding="10")
@@ -416,7 +455,7 @@ class LogParserApp:
                     ))
                     
                     # Erstelle temporäres Verzeichnis
-                    temp_dir = tempfile.mkdtemp(prefix="logparser_zip_")
+                    temp_dir = self._create_temp_dir()
                     self.temp_dirs.append(temp_dir)
                     
                     # Extrahiere ZIP
@@ -472,7 +511,7 @@ class LogParserApp:
             zip_path_obj = Path(zip_path)
             
             # Erstelle temporäres Verzeichnis
-            temp_dir = tempfile.mkdtemp(prefix="logparser_zip_")
+            temp_dir = self._create_temp_dir()
             self.temp_dirs.append(temp_dir)
             
             # Extrahiere ZIP
@@ -738,27 +777,109 @@ class LogParserApp:
         finally:
             self._parsing_finished()
     
+    def _create_temp_dir(self):
+        """Erstellt ein temporäres Verzeichnis im konfigurierten Temp-Ordner"""
+        if self.custom_temp_dir:
+            # Verwende benutzerdefinierten Temp-Ordner
+            return tempfile.mkdtemp(prefix="logparser_zip_", dir=self.custom_temp_dir)
+        else:
+            # Verwende System-Temp
+            return tempfile.mkdtemp(prefix="logparser_zip_")
+    
+    def _select_temp_directory(self):
+        """Lässt User einen Temp-Ordner für ZIP-Extraktion auswählen"""
+        directory = filedialog.askdirectory(
+            title="Temp-Ordner für ZIP-Extraktion auswählen",
+            initialdir=self.custom_temp_dir if self.custom_temp_dir else Path.home()
+        )
+        
+        if directory:
+            directory = Path(directory)
+            
+            # Prüfe ob Verzeichnis beschreibbar ist
+            test_file = directory / ".logparser_write_test"
+            try:
+                test_file.write_text("test")
+                test_file.unlink()
+                
+                self.custom_temp_dir = str(directory)
+                self.temp_dir_var.set(str(directory))
+                self._update_temp_space_info()
+                self._log(f"Temp-Ordner gesetzt: {directory}")
+                
+                messagebox.showinfo(
+                    "Temp-Ordner gesetzt",
+                    f"ZIP-Dateien werden nun extrahiert nach:\n{directory}"
+                )
+            except Exception as e:
+                messagebox.showerror(
+                    "Fehler",
+                    f"Verzeichnis ist nicht beschreibbar:\n{directory}\n\nFehler: {e}"
+                )
+    
+    def _reset_temp_directory(self):
+        """Setzt Temp-Ordner auf System-Standard zurück"""
+        self.custom_temp_dir = None
+        self.temp_dir_var.set("Standard (System-Temp)")
+        self._update_temp_space_info()
+        self._log("Temp-Ordner zurückgesetzt auf System-Standard")
+    
+    def _update_temp_space_info(self):
+        """Aktualisiert die Anzeige des verfügbaren Speicherplatzes"""
+        try:
+            if self.custom_temp_dir:
+                temp_path = Path(self.custom_temp_dir)
+            else:
+                temp_path = Path(tempfile.gettempdir())
+            
+            # Hole Laufwerk-Informationen
+            import shutil
+            usage = shutil.disk_usage(temp_path)
+            free_gb = usage.free / (1024**3)
+            total_gb = usage.total / (1024**3)
+            percent_free = (usage.free / usage.total) * 100
+            
+            # Farbe basierend auf verfügbarem Speicher
+            if free_gb < 5:
+                color = 'red'
+                warning = ' ⚠️ WENIG SPEICHER!'
+            elif free_gb < 20:
+                color = 'orange'
+                warning = ' ⚠️'
+            else:
+                color = 'green'
+                warning = ''
+            
+            info_text = f"Laufwerk {temp_path.drive if hasattr(temp_path, 'drive') else temp_path}: {free_gb:.1f} GB frei von {total_gb:.1f} GB ({percent_free:.1f}%){warning}"
+            self.temp_space_label.config(text=info_text, foreground=color)
+            
+        except Exception as e:
+            self.temp_space_label.config(text=f"Speicherplatz-Info nicht verfügbar: {e}", foreground='gray')
+    
     def _cleanup_old_temp_dirs(self):
         """Löscht alle alten logparser_zip_* Verzeichnisse beim Programmstart"""
         try:
+            # Cleanup im System-Temp
             temp_base = Path(tempfile.gettempdir())
             old_dirs = list(temp_base.glob("logparser_zip_*"))
             
-            if old_dirs:
-                total_size = 0
-                for old_dir in old_dirs:
-                    try:
-                        # Berechne Größe vor dem Löschen
-                        size = sum(f.stat().st_size for f in old_dir.rglob('*') if f.is_file())
-                        total_size += size
-                        shutil.rmtree(old_dir)
-                    except Exception as e:
-                        # Fehler ignorieren - evtl. von anderer Instanz verwendet
-                        pass
-                
-                if total_size > 0:
-                    size_mb = total_size / (1024 * 1024)
-                    self._log(f"Startup: {len(old_dirs)} alte Cache-Verzeichnisse gelöscht ({size_mb:.1f} MB freigegeben)")
+            total_size = 0
+            total_cleaned = 0
+            
+            for old_dir in old_dirs:
+                try:
+                    # Berechne Größe vor dem Löschen
+                    size = sum(f.stat().st_size for f in old_dir.rglob('*') if f.is_file())
+                    total_size += size
+                    shutil.rmtree(old_dir)
+                    total_cleaned += 1
+                except Exception as e:
+                    # Fehler ignorieren - evtl. von anderer Instanz verwendet
+                    pass
+            
+            if total_size > 0:
+                size_mb = total_size / (1024 * 1024)
+                self._log(f"Startup: {total_cleaned} alte Cache-Verzeichnisse gelöscht ({size_mb:.1f} MB freigegeben)")
         except Exception as e:
             # Startup-Fehler nicht kritisch - einfach loggen
             print(f"Startup cleanup warning: {e}")
@@ -766,8 +887,20 @@ class LogParserApp:
     def _manual_cache_cleanup(self):
         """Manuelles Leeren des Cache - alle logparser temp-Verzeichnisse"""
         try:
+            # Sammle Verzeichnisse aus beiden Locations
+            all_dirs = []
+            
+            # System-Temp
             temp_base = Path(tempfile.gettempdir())
-            all_dirs = list(temp_base.glob("logparser_zip_*"))
+            all_dirs.extend(list(temp_base.glob("logparser_zip_*")))
+            
+            # Benutzerdefinierter Temp-Ordner (falls gesetzt)
+            if self.custom_temp_dir:
+                custom_base = Path(self.custom_temp_dir)
+                all_dirs.extend(list(custom_base.glob("logparser_zip_*")))
+            
+            # Duplikate entfernen
+            all_dirs = list(set(all_dirs))
             
             if not all_dirs:
                 messagebox.showinfo(
@@ -787,10 +920,16 @@ class LogParserApp:
             
             size_mb = total_size / (1024 * 1024)
             
+            # Zeige Locations
+            locations_info = "System-Temp"
+            if self.custom_temp_dir:
+                locations_info += f" + {self.custom_temp_dir}"
+            
             # Bestätigung vom User
             result = messagebox.askyesno(
                 "Cache leeren",
-                f"Gefunden: {len(all_dirs)} Cache-Verzeichnisse ({size_mb:.1f} MB)\n\n"
+                f"Gefunden: {len(all_dirs)} Cache-Verzeichnisse ({size_mb:.1f} MB)\n"
+                f"Location(s): {locations_info}\n\n"
                 f"Alle Cache-Verzeichnisse löschen?\n\n"
                 f"Hinweis: Dies löscht auch extrahierte ZIP-Dateien aus der aktuellen Liste."
             )
