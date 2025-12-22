@@ -145,7 +145,7 @@ class LogParserApp:
         stats_frame = ttk.Frame(progress_frame)
         stats_frame.pack(fill=tk.X, pady=(5, 0))
         
-        self.stats_var = tk.StringVar(value="Fehler gefunden: 0")
+        self.stats_var = tk.StringVar(value="Eindeutige Fehler: 0 | Duplikate übersprungen: 0")
         ttk.Label(
             stats_frame,
             textvariable=self.stats_var,
@@ -283,19 +283,26 @@ class LogParserApp:
                 results = parser.parse_directory(directory)
                 all_results.extend(results)
                 
-                self.root.after(0, lambda r=len(all_results): 
-                    self.stats_var.set(f"Fehler gefunden: {r}")
+                # Zeige Statistik inkl. übersprungener Duplikate
+                unique_count = len(all_results)
+                skipped_count = parser.skipped_duplicates
+                self.root.after(0, lambda u=unique_count, s=skipped_count: 
+                    self.stats_var.set(f"Eindeutige Fehler: {u} | Duplikate übersprungen: {s}")
                 )
             
             if self.is_parsing and all_results:
-                self._log(f"Exportiere {len(all_results)} Einträge nach CSV...")
+                self._log(f"Exportiere {len(all_results)} eindeutige Einträge nach CSV...")
                 CSVExporter.export(all_results, output_path)
                 self._log(f"Erfolgreich exportiert: {output_path}")
+                
+                # Berechne Gesamtzahl übersprungener Duplikate
+                total_skipped = sum(p.skipped_duplicates for p in [parser] if hasattr(parser, 'skipped_duplicates'))
                 
                 self.root.after(0, lambda: messagebox.showinfo(
                     "Fertig",
                     f"Parsing abgeschlossen!\n\n"
-                    f"Fehler gefunden: {len(all_results)}\n"
+                    f"Eindeutige Fehler gefunden: {len(all_results)}\n"
+                    f"Duplikate übersprungen: {total_skipped}\n"
                     f"Ausgabedatei: {output_path}"
                 ))
             elif not all_results:

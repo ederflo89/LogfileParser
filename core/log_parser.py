@@ -24,6 +24,8 @@ class LogParser:
         """
         self.progress_callback = progress_callback
         self.results = []
+        self.seen_errors = set()  # Set für bereits gefundene Fehlertexte
+        self.skipped_duplicates = 0  # Zähler für übersprungene Duplikate
         
     def parse_directory(self, directory_path: str) -> List[Tuple[str, str, str]]:
         """
@@ -36,6 +38,8 @@ class LogParser:
             Liste von Tupeln (Logfilename, Severity, Eintragstext)
         """
         self.results = []
+        self.seen_errors = set()
+        self.skipped_duplicates = 0
         directory = Path(directory_path)
         
         if not directory.exists():
@@ -73,16 +77,21 @@ class LogParser:
                         continue
                     
                     # Prüfe auf Severity-Level
-                    severity = self._detect_severity(line)
-                    if severity:
-                        self.results.append((
-                            str(file_path),
-                            severity,
-                            line
-                        ))
-                        
-                        if self.progress_callback:
-                            self.progress_callback(
+                    seve# Prüfe ob dieser Fehler bereits gefunden wurde
+                        if line not in self.seen_errors:
+                            self.seen_errors.add(line)
+                            self.results.append((
+                                str(file_path),
+                                severity,
+                                line
+                            ))
+                            
+                            if self.progress_callback:
+                                self.progress_callback(
+                                    f"Fehler gefunden in {file_path.name}: {severity.upper()}"
+                                )
+                        else:
+                            self.skipped_duplicates += 1elf.progress_callback(
                                 f"Fehler gefunden in {file_path.name}: {severity.upper()}"
                             )
         
@@ -113,18 +122,23 @@ class LogParser:
                             
                             for line in content.splitlines():
                                 line = line.strip()
-                                if not line:
-                                    continue
-                                
-                                severity = self._detect_severity(line)
-                                if severity:
-                                    # Verwende ZIP-Pfad + interner Pfad als Dateiname
-                                    full_name = f"{zip_path.name}/{txt_file}"
-                                    self.results.append((
-                                        full_name,
-                                        severity,
-                                        line
-                                    ))
+                                if notPrüfe ob dieser Fehler bereits gefunden wurde
+                                    if line not in self.seen_errors:
+                                        self.seen_errors.add(line)
+                                        # Verwende ZIP-Pfad + interner Pfad als Dateiname
+                                        full_name = f"{zip_path.name}/{txt_file}"
+                                        self.results.append((
+                                            full_name,
+                                            severity,
+                                            line
+                                        ))
+                                        
+                                        if self.progress_callback:
+                                            self.progress_callback(
+                                                f"Fehler gefunden in {full_name}: {severity.upper()}"
+                                            )
+                                    else:
+                                        self.skipped_duplicates += 1
                                     
                                     if self.progress_callback:
                                         self.progress_callback(
