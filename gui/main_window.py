@@ -1014,6 +1014,47 @@ class LogParserApp:
         self.root.mainloop()
     
     def _on_closing(self):
-        """Wird beim Schließen des Fensters aufgerufen"""
-        self._cleanup_temp_dirs()
-        self.root.destroy()
+        """Wird beim Schließen des Fensters aufgerufen - Automatisches Cache-Cleanup"""
+        try:
+            # Sammle alle logparser_zip_* Verzeichnisse aus beiden Locations
+            all_temp_dirs = []
+            
+            # System-Temp
+            temp_base = Path(tempfile.gettempdir())
+            all_temp_dirs.extend(list(temp_base.glob("logparser_zip_*")))
+            
+            # Benutzerdefinierter Temp-Ordner (falls gesetzt)
+            if self.custom_temp_dir:
+                custom_base = Path(self.custom_temp_dir)
+                all_temp_dirs.extend(list(custom_base.glob("logparser_zip_*")))
+            
+            # Duplikate entfernen
+            all_temp_dirs = list(set(all_temp_dirs))
+            
+            # Lösche alle gefundenen Verzeichnisse
+            if all_temp_dirs:
+                deleted_count = 0
+                total_size = 0
+                
+                for temp_dir in all_temp_dirs:
+                    try:
+                        # Berechne Größe vor dem Löschen
+                        size = sum(f.stat().st_size for f in temp_dir.rglob('*') if f.is_file())
+                        total_size += size
+                        shutil.rmtree(temp_dir)
+                        deleted_count += 1
+                    except Exception as e:
+                        # Fehler ignorieren - evtl. von anderer Instanz verwendet
+                        pass
+                
+                if deleted_count > 0:
+                    size_mb = total_size / (1024 * 1024)
+                    print(f"Exit cleanup: {deleted_count} Cache-Verzeichnisse gelöscht ({size_mb:.1f} MB freigegeben)")
+        
+        except Exception as e:
+            # Cleanup-Fehler beim Beenden sind nicht kritisch
+            print(f"Exit cleanup warning: {e}")
+        
+        finally:
+            # Fenster schließen
+            self.root.destroy()
