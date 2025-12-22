@@ -65,18 +65,12 @@ class AVStumpflCSVExporter:
         # Erstelle Verzeichnis falls nicht vorhanden
         output_file.parent.mkdir(parents=True, exist_ok=True)
         
-        with open(output_file, 'w', newline='', encoding='utf-8-sig') as f:
-            writer = csv.writer(f, delimiter=',', quotechar='"', quoting=csv.QUOTE_MINIMAL)
-            
-            # Header schreiben
-            header = ['Log-Kategorie', 'Ordner', 'Logfile-Gruppe', 'Dateiname-Original', 'Anzahl']
-            if add_category:
-                header.append('Fehler-Kategorie')
-            header.extend(['Datum', 'Zeit', 'Severity', 'Type/Source', 'Description'])
-            writer.writerow(header)
-            
-            # Daten schreiben
-            for logfile, date, time, severity, log_type, description in results:
+        # Sammle Zeilen für Duplikaterkennung nach Anonymisierung
+        processed_rows = []
+        seen_after_anonymization = set()
+        
+        # Verarbeite alle Einträge
+        for logfile, date, time, severity, log_type, description in results:
                 # Teile Pfad in Komponenten auf
                 path = Path(logfile)
                 filename_original = path.name
@@ -112,22 +106,48 @@ class AVStumpflCSVExporter:
                     remaining_path = str(path.parent) if path.parent != Path('.') else ''
                 
                 # Anonymisiere Daten wenn Anonymizer vorhanden
+                # WICHTIG: Logfile-Gruppe und Dateiname-Original werden NICHT anonymisiert
+                # damit man nachvollziehen kann, aus welcher Datei die Fehler stammen
                 if anonymizer:
                     remaining_path = anonymizer.anonymize_path(remaining_path) if remaining_path else ''
-                    filename_normalized = anonymizer.anonymize_filename(filename_normalized)
-                    filename_original = anonymizer.anonymize_filename(filename_original)
+                    # filename_normalized und filename_original NICHT anonymisieren
                     log_type = anonymizer.anonymize_message(log_type)
                     clean_description = anonymizer.anonymize_message(clean_description)
                 
-                # Erstelle Zeile mit neuen Spalten
-                row = [log_category, remaining_path, filename_normalized, filename_original, count]
-                
-                # Fehler-Kategorie hinzufügen wenn aktiviert
+                # Fehler-Kategorie ermitteln wenn aktiviert
+                error_category = ''
                 if add_category and categorizer:
                     error_category = categorizer.categorize(clean_description, log_type)
-                    row.append(error_category)
                 
+                # Erstelle Zeile
+                row = [log_category, remaining_path, filename_normalized, filename_original, count]
+                if add_category:
+                    row.append(error_category)
                 row.extend([date, time, severity, log_type, clean_description])
+                
+                # Duplikaterkennung nach Anonymisierung
+                # Nutze Severity + Type + Description als Schlüssel
+                if anonymizer:
+                    dedup_key = f"{severity}|{log_type}|{clean_description}"
+                    if dedup_key not in seen_after_anonymization:
+                        seen_after_anonymization.add(dedup_key)
+                        processed_rows.append(row)
+                else:
+                    processed_rows.append(row)
+        
+        # Schreibe alle unique Zeilen
+        with open(output_file, 'w', newline='', encoding='utf-8-sig') as f:
+            writer = csv.writer(f, delimiter=',', quotechar='"', quoting=csv.QUOTE_MINIMAL)
+            
+            # Header schreiben
+            header = ['Log-Kategorie', 'Ordner', 'Logfile-Gruppe', 'Dateiname-Original', 'Anzahl']
+            if add_category:
+                header.append('Fehler-Kategorie')
+            header.extend(['Datum', 'Zeit', 'Severity', 'Type/Source', 'Description'])
+            writer.writerow(header)
+            
+            # Daten schreiben
+            for row in processed_rows:
                 writer.writerow(row)
         
         return output_file

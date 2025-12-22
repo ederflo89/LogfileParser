@@ -23,7 +23,8 @@ class LogParserApp:
     def __init__(self):
         self.root = tk.Tk()
         self.root.title("LogfileParser")
-        self.root.geometry("900x700")
+        self.root.geometry("950x850")  # Erhöht damit alle Buttons sichtbar sind
+        self.root.minsize(950, 850)  # Minimum-Größe festlegen
         
         self.directories = []
         self.is_parsing = False
