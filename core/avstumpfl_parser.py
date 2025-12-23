@@ -249,6 +249,25 @@ class AVStumpflLogParser:
         r'^(\w{3}\s+\d{2}\.\w{3}\.\s+)(\d{2}:\d{2}:\d{2}\.\d{3})\s+(INFO|ERROR|WARN|WARNING|FATAL|CRITICAL)\s+(.+)$'
     )
     
+    # Regex für Log-Eintrag Format 4: D Mon YYYY HH:MM:SS Class::Method: error_type: message
+    # Beispiel: 3 Oct 2025 17:42:29 RX::Manager::dataReceived: message error: "invalid machine"
+    LOG_ENTRY_PATTERN_4 = re.compile(
+        r'^(\d{1,2}\s+\w{3}\s+\d{4})\s+(\d{2}:\d{2}:\d{2})\s+(.+)$'
+    )
+    
+    # Regex für Log-Eintrag Format 5: Process@ISO8601-Timestamp Message
+    # Beispiel: Renderer@2025-06-13T20:47:42.239Z Task did not complete in time
+    # Fehler sind mit "|  Error:" markiert in Folgezeilen
+    LOG_ENTRY_PATTERN_5 = re.compile(
+        r'^(\w+)@(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2}:\d{2}\.\d{3})Z\s+(.+)$'
+    )
+    
+    # Regex für Log-Eintrag Format 6: [Source] Day DD.Mon. HH:MM:SS.mmm LEVEL Message
+    # Beispiel: [manager]          Wed 24.Sep. 13:17:05.879 ERROR     applying client message failed
+    LOG_ENTRY_PATTERN_6 = re.compile(
+        r'^\[([^\]]+)\]\s+(\w{3}\s+\d{2}\.\w{3}\.\s+)(\d{2}:\d{2}:\d{2}\.\d{3})\s+(INFO|ERROR|WARN|WARNING|FATAL|CRITICAL|VERBOSE|DEBUG)\s+(.+)$'
+    )
+    
     def __init__(self, progress_callback: Callable = None):
         """
         Initialisiert den AV Stumpfl LogParser
@@ -327,7 +346,7 @@ class AVStumpflLogParser:
         while i < len(lines):
             line = lines[i].rstrip()
             
-            # Prüfe alle drei Log-Formate
+            # Prüfe alle Log-Formate
             match = None
             pattern_type = None
             
@@ -348,27 +367,126 @@ class AVStumpflLogParser:
                 if match:
                     pattern_type = 3
             
+            # Format 4: D Mon YYYY HH:MM:SS Class::Method: error_type: message
+            # Severity wird aus Keywords im Text erkannt
+            if not match:
+                match = self.LOG_ENTRY_PATTERN_4.match(line)
+                if match:
+                    pattern_type = 4
+            
+            # Format 5: Process@ISO8601-Timestamp Message
+            # Electron error-dumps Format
+            if not match:
+                match = self.LOG_ENTRY_PATTERN_5.match(line)
+                if match:
+                    pattern_type = 5
+            
+            # Format 6: [Source] Day DD.Mon. HH:MM:SS.mmm LEVEL Message
+            # merged.log Format
+            if not match:
+                match = self.LOG_ENTRY_PATTERN_6.match(line)
+                if match:
+                    pattern_type = 6
+            
             if match:
-                date = match.group(1)
-                time = match.group(2)
-                severity_code = match.group(3)
-                log_type = match.group(4).strip()
-                
-                # Prüfe ob dieser Severity-Level relevant ist
-                if severity_code in self.FILTER_SEVERITIES:
-                    # Lese die nächste(n) Zeile(n) für die Description
+                # Pattern 6 ([Source] Day DD.Mon. HH:MM:SS.mmm LEVEL Message)
+                if pattern_type == 6:
+                    source_prefix = match.group(1)  # manager, playback, etc.
+                    date = match.group(2)           # Day DD.Mon.
+                    time = match.group(3)           # HH:MM:SS.mmm
+                    severity_code = match.group(4)  # INFO, ERROR, etc.
+                    log_type = match.group(5).strip()
+                    
+                # Pattern 5 (Electron) hat spezielles Format
+                elif pattern_type == 5:
+                    process_name = match.group(1)  # Renderer, Main, etc.
+                    date = match.group(2)          # YYYY-MM-DD
+                    time = match.group(3)          # HH:MM:SS.mmm
+                    log_type = match.group(4).strip()
+                    
+                    # Lese Folgezeilen für Error-Detektion
+                    # Format: |  Error: message oder |  TypeError: message
                     description_lines = []
+                    severity_code = None
                     i += 1
                     
-                    # Sammle alle eingerückten Folgezeilen
                     while i < len(lines):
                         next_line = lines[i].rstrip()
                         
                         # Prüfe ob es ein neuer Log-Eintrag ist
-                        if (self.LOG_ENTRY_PATTERN_1.match(next_line) or 
-                            self.LOG_ENTRY_PATTERN_2.match(next_line) or
-                            self.LOG_ENTRY_PATTERN_3.match(next_line)):
+                        if self.LOG_ENTRY_PATTERN_5.match(next_line):
                             break
+                        
+                        # Prüfe auf Error-Marker: |  Error:, |  TypeError:, etc.
+                        if next_line.startswith('|  '):
+                            error_line = next_line[3:].strip()  # Entferne "|  "
+                            
+                            # Erkenne Severity aus Error-Typ
+                            if error_line.startswith('Error:') or 'Error:' in error_line:
+                                severity_code = 'ERROR'
+                                description_lines.append(error_line)
+                            elif error_line.startswith('TypeError:') or error_line.startswith('ReferenceError:'):
+                                severity_code = 'ERROR'
+                                description_lines.append(error_line)
+                            elif error_line.startswith('Warning:'):
+                                severity_code = 'WARNING'
+                                description_lines.append(error_line)
+                            else:
+                                description_lines.append(error_line)
+                            i += 1
+                        elif next_line.startswith('|________'):
+                            # Ende des Error-Blocks
+                            i += 1
+                            break
+                        else:
+                            break
+                    
+                    # Nur wenn Severity gefunden wurde, als Error behandeln
+                    if not severity_code:
+                        continue
+                        
+                elif pattern_type == 4:
+                    date = match.group(1)
+                    time = match.group(2)
+                    log_type = match.group(3).strip()
+                    # Erkenne Severity aus dem Text
+                    log_type_lower = log_type.lower()
+                    if 'fatal' in log_type_lower or 'critical' in log_type_lower:
+                        severity_code = 'FATAL'
+                    elif 'error' in log_type_lower:
+                        severity_code = 'ERROR'
+                    elif 'warn' in log_type_lower:
+                        severity_code = 'WARNING'
+                    else:
+                        # Kein Error-Keyword gefunden - überspringe diese Zeile
+                        i += 1
+                        continue
+                else:
+                    date = match.group(1)
+                    time = match.group(2)
+                    severity_code = match.group(3)
+                    log_type = match.group(4).strip()
+                
+                # Prüfe ob dieser Severity-Level relevant ist
+                if severity_code in self.FILTER_SEVERITIES:
+                    # Pattern 5 hat bereits description_lines gesammelt
+                    if pattern_type != 5:
+                        # Lese die nächste(n) Zeile(n) für die Description
+                        description_lines = []
+                        i += 1
+                        
+                        # Sammle alle eingerückten Folgezeilen
+                        while i < len(lines):
+                            next_line = lines[i].rstrip()
+                            
+                            # Prüfe ob es ein neuer Log-Eintrag ist
+                            if (self.LOG_ENTRY_PATTERN_1.match(next_line) or 
+                                self.LOG_ENTRY_PATTERN_2.match(next_line) or
+                                self.LOG_ENTRY_PATTERN_3.match(next_line) or
+                                self.LOG_ENTRY_PATTERN_4.match(next_line) or
+                                self.LOG_ENTRY_PATTERN_5.match(next_line) or
+                                self.LOG_ENTRY_PATTERN_6.match(next_line)):
+                                break
                         
                         # Füge eingerückte Zeile zur Description hinzu
                         if next_line.startswith('\t') or next_line.startswith('    '):
