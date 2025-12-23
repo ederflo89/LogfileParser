@@ -60,8 +60,13 @@ def generalize_file_paths(text: str) -> str:
     result = re.sub(r'\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}(:\d+)?', '<IP>', result)
     
     # 6. Datei-IDs und Hashes (lange Zahlenfolgen/Hex-Strings)
-    result = re.sub(r'\b\d{13,}\b', '<FILE_ID>', result)  # Lange Zahlen wie 4536398972959022
+    # Diese werden NACH Pfad-Replacement durchgeführt, um auch IDs in Dateinamen zu erfassen
+    result = re.sub(r'\b\d{16,}\b', '<FILE_ID>', result)  # Sehr lange Zahlen wie 4536398972959022_16660441324635355046
     result = re.sub(r'\b[a-f0-9]{32,}\b', '<HASH>', result)  # MD5/SHA Hashes
+    
+    # 7. Datums-/Zeit-Strings in Dateinamen (z.B. _202509301202, _202510032056)
+    result = re.sub(r'_\d{12}', '_<TIMESTAMP>', result)  # _YYYYMMDDHHMI
+    result = re.sub(r'_\d{14}', '_<TIMESTAMP>', result)  # _YYYYMMDDHHMMSS
     
     return result
 
@@ -136,7 +141,7 @@ class LogParser:
                     # Prüfe auf Severity-Level
                     severity = self._detect_severity(line)
                     if severity:
-                        # Generalisiere Pfade für Duplikaterkennung
+                        # Generalisiere Pfade für Duplikaterkennung UND Export
                         generalized_line = generalize_file_paths(line)
                         
                         # Prüfe ob dieser Fehler bereits gefunden wurde (basierend auf generalisierter Version)
@@ -145,7 +150,7 @@ class LogParser:
                             self.results.append((
                                 str(file_path),
                                 severity,
-                                line  # Speichere Original-Zeile für Output
+                                generalized_line  # Speichere generalisierte Zeile für CSV Export
                             ))
                             
                             if self.progress_callback:
@@ -187,7 +192,7 @@ class LogParser:
                                 
                                 severity = self._detect_severity(line)
                                 if severity:
-                                    # Generalisiere Pfade für Duplikaterkennung
+                                    # Generalisiere Pfade für Duplikaterkennung UND Export
                                     generalized_line = generalize_file_paths(line)
                                     
                                     # Prüfe ob dieser Fehler bereits gefunden wurde (basierend auf generalisierter Version)
@@ -198,7 +203,7 @@ class LogParser:
                                         self.results.append((
                                             full_name,
                                             severity,
-                                            line  # Speichere Original-Zeile für Output
+                                            generalized_line  # Speichere generalisierte Zeile für CSV Export
                                         ))
                                         
                                         if self.progress_callback:

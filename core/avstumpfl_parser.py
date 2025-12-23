@@ -6,6 +6,7 @@ import re
 from typing import List, Tuple, Callable
 from pathlib import Path
 import zipfile
+from core.log_parser import generalize_file_paths
 
 
 class AVStumpflLogParser:
@@ -414,13 +415,17 @@ class AVStumpflLogParser:
                         
                         severity_name = self.SEVERITY_MAP.get(severity_code, severity_code)
                         
+                        # Generalisiere Pfade in log_type und description für CSV Export
+                        generalized_type = generalize_file_paths(log_type)
+                        generalized_description = generalize_file_paths(description)
+                        
                         self.results.append((
                             source_name,
                             date,
                             time,
                             severity_name,
-                            log_type,
-                            description
+                            generalized_type,      # Generalisierte Version für CSV
+                            generalized_description  # Generalisierte Version für CSV
                         ))
                         
                         if self.progress_callback:
