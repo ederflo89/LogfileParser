@@ -148,3 +148,133 @@ class AVStumpflCSVExporter:
                 writer.writerow(row)
         
         return output_file
+
+    @staticmethod
+    def export_to_database(results: List[Tuple[str, str, str, str, str, str]], database_path: str,
+                          anonymizer=None, add_category: bool = True):
+        """
+        Erweitert eine bestehende Datenbank-CSV oder erstellt eine neue
+        
+        Args:
+            results: Liste von Tupeln (Logfilename, Datum, Zeit, Severity, Type, Description)
+            database_path: Pfad zur Datenbank-CSV-Datei
+            anonymizer: Optionaler DataAnonymizer für Anonymisierung
+            add_category: Wenn True, fügt Fehler-Kategorie-Spalte hinzu
+        
+        Returns:
+            Tupel (database_path, new_entries, total_entries)
+        """
+        database_file = Path(database_path)
+        categorizer = ErrorCategorizer() if add_category else None
+        
+        # Lade bestehende Einträge falls Datei existiert
+        existing_rows = []
+        existing_keys = set()
+        
+        if database_file.exists():
+            try:
+                with open(database_file, 'r', encoding='utf-8-sig') as f:
+                    reader = csv.DictReader(f)
+                    for row in reader:
+                        existing_rows.append(row)
+                        # Erstelle Dedup-Key aus bestehenden Daten
+                        severity = row.get('Severity', '')
+                        log_type = row.get('Type/Source', '')
+                        description = row.get('Description', '')
+                        dedup_key = f"{severity}|{log_type}|{description}"
+                        existing_keys.add(dedup_key)
+            except Exception as e:
+                print(f"Warnung: Konnte bestehende Datenbank nicht lesen: {e}")
+        
+        # Verarbeite neue Einträge
+        new_rows = []
+        new_count = 0
+        
+        for logfile, date, time, severity, log_type, description in results:
+            # Teile Pfad in Komponenten auf
+            path = Path(logfile)
+            filename_original = path.name
+            
+            # Normalisiere Dateinamen (entferne Split-Suffixe)
+            filename_normalized = AVStumpflCSVExporter._normalize_filename(filename_original)
+            
+            # Extrahiere Anzahl aus Description
+            count, clean_description = AVStumpflCSVExporter._extract_count_from_description(description)
+            
+            # Kürze Pfade in Description
+            clean_description = AVStumpflCSVExporter._shorten_path_in_description(clean_description)
+            
+            # Extrahiere Log-Kategorie
+            parts = path.parts
+            log_category = ''
+            remaining_path = str(path.parent) if path.parent != Path('.') else ''
+            
+            for i, part in enumerate(parts):
+                if 'log' in part.lower() or 'rx' in part.lower() or 'pixera' in part.lower():
+                    log_category = part
+                    if i + 1 < len(parts) - 1:
+                        remaining_path = str(Path(*parts[i+1:-1]))
+                    else:
+                        remaining_path = ''
+                    break
+            
+            if not log_category and len(parts) > 1:
+                log_category = parts[-2] if len(parts) > 1 else ''
+                remaining_path = str(path.parent) if path.parent != Path('.') else ''
+            
+            # Anonymisiere Daten wenn Anonymizer vorhanden
+            if anonymizer:
+                remaining_path = anonymizer.anonymize_path(remaining_path) if remaining_path else ''
+                log_type = anonymizer.anonymize_message(log_type)
+                clean_description = anonymizer.anonymize_message(clean_description)
+            
+            # Fehler-Kategorie ermitteln
+            error_category = ''
+            if add_category and categorizer:
+                error_category = categorizer.categorize(clean_description, log_type)
+            
+            # Duplikaterkennung: Nur neue Fehler hinzufügen
+            dedup_key = f"{severity}|{log_type}|{clean_description}"
+            if dedup_key not in existing_keys:
+                # Erstelle Row-Dict
+                row_dict = {
+                    'Log-Kategorie': log_category,
+                    'Ordner': remaining_path,
+                    'Logfile-Gruppe': filename_normalized,
+                    'Dateiname-Original': filename_original,
+                    'Anzahl': count,
+                    'Datum': date,
+                    'Zeit': time,
+                    'Severity': severity,
+                    'Type/Source': log_type,
+                    'Description': clean_description
+                }
+                
+                if add_category:
+                    row_dict['Fehler-Kategorie'] = error_category
+                
+                new_rows.append(row_dict)
+                existing_keys.add(dedup_key)
+                new_count += 1
+        
+        # Schreibe erweiterte Datenbank
+        with open(database_file, 'w', newline='', encoding='utf-8-sig') as f:
+            # Bestimme Header
+            header = ['Log-Kategorie', 'Ordner', 'Logfile-Gruppe', 'Dateiname-Original', 'Anzahl']
+            if add_category:
+                header.append('Fehler-Kategorie')
+            header.extend(['Datum', 'Zeit', 'Severity', 'Type/Source', 'Description'])
+            
+            writer = csv.DictWriter(f, fieldnames=header)
+            writer.writeheader()
+            
+            # Schreibe bestehende Einträge
+            for row in existing_rows:
+                writer.writerow(row)
+            
+            # Schreibe neue Einträge
+            for row in new_rows:
+                writer.writerow(row)
+        
+        total_entries = len(existing_rows) + new_count
+        return database_file, new_count, total_entries

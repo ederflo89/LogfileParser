@@ -43,6 +43,10 @@ class LogParserApp:
         self.anonymize_data = tk.BooleanVar(value=False)
         self.add_error_category = tk.BooleanVar(value=True)
         
+        # Datenbank-Modus für persistente Fehlersammlung
+        self.use_database_mode = tk.BooleanVar(value=False)
+        self.database_file = None  # Pfad zur Datenbank-CSV
+        
         self._setup_ui()
     
     def _setup_ui(self):
@@ -179,6 +183,62 @@ class LogParserApp:
             font=('Arial', 8),
             foreground='gray'
         ).pack(anchor=tk.W, padx=20)
+        
+        # Datenbank-Modus
+        db_mode_frame = ttk.LabelFrame(self.root, text="Persistente Fehler-Datenbank", padding="10")
+        db_mode_frame.pack(fill=tk.X, padx=10, pady=5)
+        
+        ttk.Checkbutton(
+            db_mode_frame,
+            text="📊 Datenbank-Modus: An bestehende CSV anhängen statt neue zu erstellen",
+            variable=self.use_database_mode,
+            command=self._toggle_database_mode
+        ).pack(anchor=tk.W, pady=2)
+        
+        # Datenbank-Datei Anzeige
+        db_file_frame = ttk.Frame(db_mode_frame)
+        db_file_frame.pack(fill=tk.X, pady=5)
+        
+        self.db_file_var = tk.StringVar(value="Keine Datenbank geladen")
+        db_entry = ttk.Entry(
+            db_file_frame,
+            textvariable=self.db_file_var,
+            state='readonly'
+        )
+        db_entry.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, 5))
+        
+        self.db_load_btn = ttk.Button(
+            db_file_frame,
+            text="Datenbank laden",
+            command=self._load_database,
+            state='disabled'
+        )
+        self.db_load_btn.pack(side=tk.LEFT, padx=2)
+        
+        self.db_new_btn = ttk.Button(
+            db_file_frame,
+            text="Neue erstellen",
+            command=self._create_new_database,
+            state='disabled'
+        )
+        self.db_new_btn.pack(side=tk.LEFT, padx=2)
+        
+        # Info-Label für Datenbank-Statistik
+        self.db_stats_label = ttk.Label(
+            db_mode_frame,
+            text="",
+            font=('Arial', 8),
+            foreground='gray'
+        )
+        self.db_stats_label.pack(anchor=tk.W, padx=5)
+        
+        ttk.Label(
+            db_mode_frame,
+            text="💡 Datenbank-Modus: Sammelt Fehler über mehrere Sessions hinweg. Neue Scans erweitern die bestehende Datenbank.",
+            font=('Arial', 8),
+            foreground='gray',
+            wraplength=900
+        ).pack(anchor=tk.W, padx=20, pady=(5, 0))
         
         # Temp-Ordner Konfiguration
         temp_config_frame = ttk.LabelFrame(self.root, text="ZIP-Extraktion Temp-Ordner", padding="10")
@@ -598,36 +658,60 @@ class LogParserApp:
             )
             return
         
-        output_path = self.output_path_var.get()
-        if not output_path:
-            messagebox.showwarning(
-                "Keine Ausgabedatei",
-                "Bitte wählen Sie eine Ausgabedatei."
-            )
-            return
+        # DATENBANK-MODUS: Validierung
+        if self.use_database_mode.get():
+            if not self.database_file:
+                messagebox.showwarning(
+                    "Keine Datenbank",
+                    "Bitte laden Sie eine bestehende Datenbank oder erstellen Sie eine neue."
+                )
+                return
+            
+            if not Path(self.database_file).exists():
+                result = messagebox.askyesno(
+                    "Datenbank nicht gefunden",
+                    f"Die Datenbank-Datei wurde nicht gefunden:\\n{self.database_file}\\n\\n"
+                    f"Möchten Sie eine neue Datenbank erstellen?"
+                )
+                if result:
+                    self._create_new_database()
+                    if not self.database_file:
+                        return
+                else:
+                    return
         
-        # Validiere Ausgabeverzeichnis
-        output_dir = Path(output_path).parent
-        if not output_dir.exists():
-            messagebox.showerror(
-                "Ungültiger Pfad",
-                f"Das Verzeichnis existiert nicht:\n{output_dir}"
-            )
-            return
-        
-        # Prüfe ob Verzeichnis beschreibbar ist
-        try:
-            test_file = output_dir / ".logparser_write_test"
-            test_file.touch()
-            test_file.unlink()
-        except Exception as e:
-            messagebox.showerror(
-                "Keine Schreibberechtigung",
-                f"Keine Schreibberechtigung für:\n{output_dir}\n\n"
-                f"Bitte wählen Sie einen anderen Speicherort (z.B. Desktop oder Dokumente).\n\n"
-                f"Fehler: {str(e)}"
-            )
-            return
+        # NORMALER MODUS: Output-Pfad Validierung
+        else:
+            output_path = self.output_path_var.get()
+            if not output_path:
+                messagebox.showwarning(
+                    "Keine Ausgabedatei",
+                    "Bitte wählen Sie eine Ausgabedatei."
+                )
+                return
+            
+            # Validiere Ausgabeverzeichnis
+            output_dir = Path(output_path).parent
+            if not output_dir.exists():
+                messagebox.showerror(
+                    "Ungültiger Pfad",
+                    f"Das Verzeichnis existiert nicht:\\n{output_dir}"
+                )
+                return
+            
+            # Prüfe ob Verzeichnis beschreibbar ist
+            try:
+                test_file = output_dir / ".logparser_write_test"
+                test_file.touch()
+                test_file.unlink()
+            except Exception as e:
+                messagebox.showerror(
+                    "Keine Schreibberechtigung",
+                    f"Keine Schreibberechtigung für:\\n{output_dir}\\n\\n"
+                    f"Bitte wählen Sie einen anderen Speicherort (z.B. Desktop oder Dokumente).\\n\\n"
+                    f"Fehler: {str(e)}"
+                )
+                return
         
         self.is_parsing = True
         self.start_btn.config(state='disabled')
@@ -689,25 +773,56 @@ class LogParserApp:
                 
                 # Export Detailliert
                 if self.export_detailed.get():
-                    self._log(f"Exportiere {len(all_results)} eindeutige Einträge (Detailliert)...")
-                    detail_path = output_dir / f"{output_base}_detail.csv"
-                    
-                    if mode == "avstumpfl":
-                        AVStumpflCSVExporter.export(
-                            all_results, 
-                            str(detail_path),
+                    # DATENBANK-MODUS: Erweitere bestehende Datenbank
+                    if self.use_database_mode.get() and self.database_file and mode == "avstumpfl":
+                        self._log(f"Erweitere Datenbank mit {len(all_results)} neuen Einträgen...")
+                        
+                        db_file, new_entries, total_entries = AVStumpflCSVExporter.export_to_database(
+                            all_results,
+                            self.database_file,
                             anonymizer=anonymizer,
                             add_category=self.add_error_category.get()
                         )
+                        
+                        self._log(f"✓ Datenbank aktualisiert: {Path(db_file).name}")
+                        self._log(f"  • Neue Fehler: {new_entries}")
+                        self._log(f"  • Gesamt: {total_entries} Einträge")
+                        
+                        # Aktualisiere Statistik-Label
+                        self.db_stats_label.config(
+                            text=f"📊 Datenbank: {total_entries} Einträge ({new_entries} neu hinzugefügt)",
+                            foreground='green'
+                        )
+                        
+                        messagebox.showinfo(
+                            "Datenbank erweitert",
+                            f"Datenbank erfolgreich aktualisiert:\\n\\n"
+                            f"Neue Fehler: {new_entries}\\n"
+                            f"Gesamt: {total_entries} Einträge\\n\\n"
+                            f"Datei: {Path(db_file).name}"
+                        )
+                    
+                    # NORMALER MODUS: Erstelle neue CSV
                     else:
-                        CSVExporter.export(
-                            all_results, 
-                            str(detail_path),
-                            anonymizer=anonymizer,
-                            add_category=self.add_error_category.get()
-                        )
-                    
-                    self._log(f"✓ Detailliert: {detail_path}")
+                        self._log(f"Exportiere {len(all_results)} eindeutige Einträge (Detailliert)...")
+                        detail_path = output_dir / f"{output_base}_detail.csv"
+                        
+                        if mode == "avstumpfl":
+                            AVStumpflCSVExporter.export(
+                                all_results, 
+                                str(detail_path),
+                                anonymizer=anonymizer,
+                                add_category=self.add_error_category.get()
+                            )
+                        else:
+                            CSVExporter.export(
+                                all_results, 
+                                str(detail_path),
+                                anonymizer=anonymizer,
+                                add_category=self.add_error_category.get()
+                            )
+                        
+                        self._log(f"✓ Detailliert: {detail_path}")
                 
                 # Export Zusammengefasst
                 if self.export_summary.get():
@@ -855,6 +970,117 @@ class LogParserApp:
             
         except Exception as e:
             self.temp_space_label.config(text=f"Speicherplatz-Info nicht verfügbar: {e}", foreground='gray')
+    
+    def _toggle_database_mode(self):
+        """Aktiviert/Deaktiviert den Datenbank-Modus"""
+        if self.use_database_mode.get():
+            self.db_load_btn.config(state='normal')
+            self.db_new_btn.config(state='normal')
+            self._log("Datenbank-Modus aktiviert")
+        else:
+            self.db_load_btn.config(state='disabled')
+            self.db_new_btn.config(state='disabled')
+            self.database_file = None
+            self.db_file_var.set("Keine Datenbank geladen")
+            self.db_stats_label.config(text="")
+            self._log("Datenbank-Modus deaktiviert")
+    
+    def _load_database(self):
+        """Lädt eine bestehende Datenbank-CSV"""
+        file_path = filedialog.askopenfilename(
+            title="Datenbank-CSV laden",
+            filetypes=[("CSV-Dateien", "*.csv"), ("Alle Dateien", "*.*")],
+            initialdir=Path.home() / "Desktop"
+        )
+        
+        if file_path:
+            try:
+                # Prüfe ob Datei lesbar ist
+                import csv
+                with open(file_path, 'r', encoding='utf-8-sig') as f:
+                    reader = csv.DictReader(f)
+                    rows = list(reader)
+                    
+                    # Validiere Header
+                    required_cols = ['Type/Source', 'Description', 'Severity']
+                    if not all(col in reader.fieldnames for col in required_cols):
+                        messagebox.showerror(
+                            "Ungültige Datenbank",
+                            f"Die CSV-Datei enthält nicht alle erforderlichen Spalten.\\n\\n"
+                            f"Erforderlich: {', '.join(required_cols)}"
+                        )
+                        return
+                    
+                    self.database_file = file_path
+                    self.db_file_var.set(Path(file_path).name)
+                    
+                    # Zeige Statistik
+                    unique_errors = len(set(f"{r.get('Severity', '')}|{r.get('Type/Source', '')}|{r.get('Description', '')}" for r in rows))
+                    self.db_stats_label.config(
+                        text=f"📊 Geladen: {len(rows)} Einträge, {unique_errors} unique Fehler",
+                        foreground='green'
+                    )
+                    
+                    self._log(f"Datenbank geladen: {Path(file_path).name} ({len(rows)} Einträge)")
+                    
+                    messagebox.showinfo(
+                        "Datenbank geladen",
+                        f"Datenbank erfolgreich geladen:\\n\\n"
+                        f"Datei: {Path(file_path).name}\\n"
+                        f"Einträge: {len(rows)}\\n"
+                        f"Unique Fehler: {unique_errors}\\n\\n"
+                        f"Neue Scans werden diese Datenbank erweitern."
+                    )
+            
+            except Exception as e:
+                messagebox.showerror(
+                    "Fehler beim Laden",
+                    f"Konnte Datenbank nicht laden:\\n{e}"
+                )
+    
+    def _create_new_database(self):
+        """Erstellt eine neue Datenbank-CSV"""
+        file_path = filedialog.asksaveasfilename(
+            title="Neue Datenbank erstellen",
+            defaultextension=".csv",
+            filetypes=[("CSV-Dateien", "*.csv"), ("Alle Dateien", "*.*")],
+            initialdir=Path.home() / "Desktop",
+            initialfile="fehler_datenbank.csv"
+        )
+        
+        if file_path:
+            try:
+                # Erstelle leere CSV mit Header
+                import csv
+                with open(file_path, 'w', newline='', encoding='utf-8-sig') as f:
+                    writer = csv.writer(f)
+                    header = ['Log-Kategorie', 'Ordner', 'Logfile-Gruppe', 'Dateiname-Original', 'Anzahl']
+                    if self.add_error_category.get():
+                        header.append('Fehler-Kategorie')
+                    header.extend(['Datum', 'Zeit', 'Severity', 'Type/Source', 'Description'])
+                    writer.writerow(header)
+                
+                self.database_file = file_path
+                self.db_file_var.set(Path(file_path).name)
+                self.db_stats_label.config(
+                    text="📊 Neue Datenbank: 0 Einträge",
+                    foreground='blue'
+                )
+                
+                self._log(f"Neue Datenbank erstellt: {Path(file_path).name}")
+                
+                messagebox.showinfo(
+                    "Datenbank erstellt",
+                    f"Neue Datenbank erfolgreich erstellt:\\n\\n"
+                    f"Datei: {Path(file_path).name}\\n\\n"
+                    f"Die Datenbank ist bereit für den ersten Scan."
+                )
+            
+            except Exception as e:
+                messagebox.showerror(
+                    "Fehler beim Erstellen",
+                    f"Konnte Datenbank nicht erstellen:\\n{e}"
+                )
     
     def _cleanup_old_temp_dirs(self):
         """Löscht alle alten logparser_zip_* Verzeichnisse beim Programmstart"""
