@@ -49,14 +49,13 @@ class AVStumpflCSVExporter:
     
     @staticmethod
     def export(results: List[Tuple[str, str, str, str, str, str]], output_path: str, 
-               anonymizer=None, add_category: bool = True):
+               add_category: bool = True):
         """
         Exportiert Ergebnisse in eine CSV-Datei
         
         Args:
             results: Liste von Tupeln (Logfilename, Datum, Zeit, Severity, Type, Description)
             output_path: Pfad zur Ausgabe-CSV-Datei
-            anonymizer: Optionaler DataAnonymizer für Anonymisierung
             add_category: Wenn True, fügt Fehler-Kategorie-Spalte hinzu
         """
         output_file = Path(output_path)
@@ -104,15 +103,6 @@ class AVStumpflCSVExporter:
                 if not log_category and len(parts) > 1:
                     log_category = parts[-2] if len(parts) > 1 else ''
                     remaining_path = str(path.parent) if path.parent != Path('.') else ''
-                
-                # Anonymisiere Daten wenn Anonymizer vorhanden
-                # WICHTIG: Logfile-Gruppe und Dateiname-Original werden NICHT anonymisiert
-                # damit man nachvollziehen kann, aus welcher Datei die Fehler stammen
-                if anonymizer:
-                    remaining_path = anonymizer.anonymize_path(remaining_path) if remaining_path else ''
-                    # filename_normalized und filename_original NICHT anonymisieren
-                    log_type = anonymizer.anonymize_message(log_type)
-                    clean_description = anonymizer.anonymize_message(clean_description)
                 
                 # Fehler-Kategorie ermitteln wenn aktiviert
                 error_category = ''

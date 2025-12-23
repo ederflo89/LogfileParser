@@ -13,7 +13,6 @@ import shutil
 from core import LogParser, CSVExporter
 from core.avstumpfl_parser import AVStumpflLogParser
 from core.avstumpfl_exporter import AVStumpflCSVExporter
-from core.anonymizer import DataAnonymizer
 from core.summary_exporter import SummaryExporter
 
 
@@ -223,19 +222,6 @@ class LogParserApp:
             text="Error Categorization (Network/File/System/...)",
             variable=self.add_error_category
         ).pack(anchor=tk.W, pady=2)
-        
-        ttk.Checkbutton(
-            right_col,
-            text="Anonymize Data (IPs, paths, hostnames)",
-            variable=self.anonymize_data
-        ).pack(anchor=tk.W, pady=2)
-        
-        ttk.Label(
-            right_col,
-            text="💡 Tip: Anonymization recommended for LLM training",
-            font=('Arial', 8),
-            foreground='gray'
-        ).pack(anchor=tk.W, padx=20)
         
         # Persistent Error Database - COLLAPSIBLE
         db_mode_content = self._create_collapsible_frame(
@@ -802,12 +788,7 @@ class LogParserApp:
             all_results = []
             mode = self.parser_mode.get()
             
-            # Erstelle Anonymizer wenn aktiviert
-            anonymizer = DataAnonymizer() if self.anonymize_data.get() else None
-            
             self._log(f"Parser-Modus: {'AV Stumpfl Format' if mode == 'avstumpfl' else 'Generischer Modus'}")
-            if anonymizer:
-                self._log("Anonymization enabled (for LLM training)")
             
             # Create ONE parser for all directories
             # This enables global duplicate detection across all logfiles
@@ -848,7 +829,6 @@ class LogParserApp:
                         db_file, new_entries, total_entries = AVStumpflCSVExporter.export_to_database(
                             all_results,
                             self.database_file,
-                            anonymizer=anonymizer,
                             add_category=self.add_error_category.get()
                         )
                         
@@ -879,14 +859,12 @@ class LogParserApp:
                             AVStumpflCSVExporter.export(
                                 all_results, 
                                 str(detail_path),
-                                anonymizer=anonymizer,
                                 add_category=self.add_error_category.get()
                             )
                         else:
                             CSVExporter.export(
                                 all_results, 
                                 str(detail_path),
-                                anonymizer=anonymizer,
                                 add_category=self.add_error_category.get()
                             )
                         
@@ -898,8 +876,7 @@ class LogParserApp:
                     summary_path = output_dir / f"{output_base}_summary.csv"
                     SummaryExporter.export_grouped_csv(
                         all_results, 
-                        str(summary_path),
-                        anonymizer=anonymizer
+                        str(summary_path)
                     )
                     self._log(f"✓ Zusammengefasst: {summary_path}")
                 
@@ -909,8 +886,7 @@ class LogParserApp:
                     stats_path = output_dir / f"{output_base}_statistics.txt"
                     SummaryExporter.export_statistics(
                         all_results,
-                        str(stats_path),
-                        anonymizer=anonymizer
+                        str(stats_path)
                     )
                     self._log(f"✓ Statistik: {stats_path}")
                 

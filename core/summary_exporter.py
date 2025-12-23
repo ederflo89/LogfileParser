@@ -118,10 +118,7 @@ class SummaryExporter:
             for key, data in sorted_errors:
                 category, short_type = key.split('|', 1)
                 
-                # Anonymisiere Beschreibung wenn Anonymizer vorhanden
                 description = data['full_description']
-                if anonymizer:
-                    description = anonymizer.anonymize_message(description)
                 
                 # Top 3 Logfiles mit höchsten Counts
                 top_logfiles = data['logfile_groups'].most_common(3)
@@ -184,17 +181,6 @@ class SummaryExporter:
             f.write(f"Gesamt-Vorkommen (inkl. Counts): {total_occurrences:,}\n")
             f.write(f"Unique Logfile-Gruppen: {len(logfile_groups)}\n")
             
-            # Anonymisierungs-Stats
-            if anonymizer:
-                anon_stats = anonymizer.get_stats()
-                f.write("\n" + "-" * 80 + "\n")
-                f.write("ANONYMISIERUNG\n")
-                f.write("-" * 80 + "\n")
-                f.write(f"Anonymisierte IPs: {anon_stats['ips_anonymized']}\n")
-                f.write(f"Anonymisierte Pfade: {anon_stats['paths_anonymized']}\n")
-                f.write(f"Anonymisierte Hostnamen: {anon_stats['hostnames_anonymized']}\n")
-                f.write(f"Anonymisierte Dateinamen: {anon_stats['filenames_anonymized']}\n")
-            
             # Fehler nach Kategorie
             f.write("\n" + "-" * 80 + "\n")
             f.write("FEHLER NACH KATEGORIE\n")
@@ -234,8 +220,6 @@ class SummaryExporter:
             
             for error_type, count in error_types.most_common(10):
                 percentage = (count / total_occurrences * 100) if total_occurrences > 0 else 0
-                # Anonymisiere wenn nötig
-                display_type = anonymizer.anonymize_message(error_type) if anonymizer else error_type
-                f.write(f"{count:6,} ({percentage:5.1f}%) - {display_type}\n")
+                f.write(f"{count:6,} ({percentage:5.1f}%) - {error_type}\n")
             
             f.write("\n" + "=" * 80 + "\n")

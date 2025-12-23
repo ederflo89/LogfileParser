@@ -13,14 +13,13 @@ class CSVExporter:
     
     @staticmethod
     def export(results: List[Tuple[str, str, str]], output_path: str, 
-               anonymizer=None, add_category: bool = True):
+               add_category: bool = True):
         """
         Exportiert Ergebnisse in eine CSV-Datei
         
         Args:
             results: Liste von Tupeln (Logfilename, Severity, Eintragstext)
             output_path: Pfad zur Ausgabe-CSV-Datei
-            anonymizer: Optionaler DataAnonymizer für Anonymisierung
             add_category: Wenn True, fügt Fehler-Kategorie-Spalte hinzu
         """
         output_file = Path(output_path)
@@ -65,12 +64,6 @@ class CSVExporter:
                 if not log_category and len(parts) > 1:
                     log_category = parts[-2] if len(parts) > 1 else ''
                     remaining_path = str(path.parent) if path.parent != Path('.') else ''
-                
-                # Anonymisiere Daten wenn Anonymizer vorhanden
-                if anonymizer:
-                    remaining_path = anonymizer.anonymize_path(remaining_path) if remaining_path else ''
-                    filename = anonymizer.anonymize_filename(filename)
-                    text = anonymizer.anonymize_message(text)
                 
                 # Erstelle Zeile
                 row = [log_category, remaining_path, filename]
