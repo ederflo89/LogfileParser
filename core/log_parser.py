@@ -9,6 +9,63 @@ from typing import List, Tuple, Callable
 from pathlib import Path
 
 
+def generalize_file_paths(text: str) -> str:
+    """
+    Generalisiert Dateipfade in Fehlermeldungen für bessere Pattern-Erkennung.
+    
+    Ersetzt konkrete Pfade durch Platzhalter:
+    - Windows-Pfade (C:\\..., D:\\...) → <DRIVE_PATH>
+    - UNC-Pfade (\\\\server\\share\\...) → <UNC_PATH>
+    - Network-Pfade (srv://...) → <SRV_PATH>
+    - URL-encoded Pfade (<?>\\D:\\...) → <URL_PATH>
+    - IP-Adressen → <IP>
+    
+    Args:
+        text: Zu generalisierender Fehlertext
+        
+    Returns:
+        Generalisierter Text ohne spezifische Pfade
+        
+    Examples:
+        >>> generalize_file_paths("loading 'D:\\\\test\\\\file.mp4' failed")
+        "loading '<DRIVE_PATH>' failed"
+        
+        >>> generalize_file_paths("error on \\\\\\\\192.168.1.5\\\\share\\\\file.mov")
+        "error on <UNC_PATH> failed"
+    """
+    # Kopie des Textes erstellen
+    result = text
+    
+    # 1. URL-encoded Pfade mit <?> Prefix - MUSS ZUERST kommen
+    # Matches: '<?>D:\path\file' oder '<?>\\server\share\file'
+    result = re.sub(r'<\?>[A-Za-z]:[/\\][^\'"\s]*', '<URL_PATH>', result)
+    result = re.sub(r'<\?>\\\\[^\'"\s]+', '<URL_PATH>', result)
+    
+    # 2. UNC-Pfade (MÜSSEN VOR normalen Pfaden kommen)
+    # Matches: '\\192.168.1.5\share\file' oder '\\server\share\file'
+    result = re.sub(r'\\\\[\d.]+\\[^\'"\s]*', '<UNC_PATH>', result)
+    result = re.sub(r'\\\\[A-Za-z0-9\-_.]+\\[^\'"\s]*', '<UNC_PATH>', result)
+    
+    # 3. Network srv:// Pfade
+    # Matches: 'srv://192.168.1.2/path/file.pfm'
+    result = re.sub(r'srv://[\d.]+/[^\s\'\"]*', '<SRV_PATH>', result)
+    
+    # 4. Windows absolute Pfade (NACH UNC-Pfaden!)
+    # Matches: 'C:\path\file.mp4' oder 'D:/path/file.png'
+    # Wichtig: Nur Pfade die mit Laufwerksbuchstabe:\ oder :/ starten
+    result = re.sub(r'[A-Za-z]:[/\\][^\'"\s]*', '<DRIVE_PATH>', result)
+    
+    # 5. IP-Adressen ohne Pfad
+    # Matches: '192.168.210.10:27102' oder '192.168.1.5'
+    result = re.sub(r'\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}(:\d+)?', '<IP>', result)
+    
+    # 6. Datei-IDs und Hashes (lange Zahlenfolgen/Hex-Strings)
+    result = re.sub(r'\b\d{13,}\b', '<FILE_ID>', result)  # Lange Zahlen wie 4536398972959022
+    result = re.sub(r'\b[a-f0-9]{32,}\b', '<HASH>', result)  # MD5/SHA Hashes
+    
+    return result
+
+
 class LogParser:
     """Parst Logfiles und extrahiert Fehlereinträge"""
     
@@ -79,13 +136,16 @@ class LogParser:
                     # Prüfe auf Severity-Level
                     severity = self._detect_severity(line)
                     if severity:
-                        # Prüfe ob dieser Fehler bereits gefunden wurde
-                        if line not in self.seen_errors:
-                            self.seen_errors.add(line)
+                        # Generalisiere Pfade für Duplikaterkennung
+                        generalized_line = generalize_file_paths(line)
+                        
+                        # Prüfe ob dieser Fehler bereits gefunden wurde (basierend auf generalisierter Version)
+                        if generalized_line not in self.seen_errors:
+                            self.seen_errors.add(generalized_line)
                             self.results.append((
                                 str(file_path),
                                 severity,
-                                line
+                                line  # Speichere Original-Zeile für Output
                             ))
                             
                             if self.progress_callback:
@@ -127,15 +187,18 @@ class LogParser:
                                 
                                 severity = self._detect_severity(line)
                                 if severity:
-                                    # Prüfe ob dieser Fehler bereits gefunden wurde
-                                    if line not in self.seen_errors:
-                                        self.seen_errors.add(line)
+                                    # Generalisiere Pfade für Duplikaterkennung
+                                    generalized_line = generalize_file_paths(line)
+                                    
+                                    # Prüfe ob dieser Fehler bereits gefunden wurde (basierend auf generalisierter Version)
+                                    if generalized_line not in self.seen_errors:
+                                        self.seen_errors.add(generalized_line)
                                         # Verwende ZIP-Pfad + interner Pfad als Dateiname
                                         full_name = f"{zip_path.name}/{txt_file}"
                                         self.results.append((
                                             full_name,
                                             severity,
-                                            line
+                                            line  # Speichere Original-Zeile für Output
                                         ))
                                         
                                         if self.progress_callback:
@@ -144,12 +207,6 @@ class LogParser:
                                             )
                                     else:
                                         self.skipped_duplicates += 1
-                                        self.skipped_duplicates += 1
-                                    
-                                    if self.progress_callback:
-                                        self.progress_callback(
-                                            f"Fehler gefunden in {full_name}: {severity.upper()}"
-                                        )
                     
                     except Exception as e:
                         if self.progress_callback:
