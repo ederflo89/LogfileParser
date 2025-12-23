@@ -23,8 +23,8 @@ class LogParserApp:
     def __init__(self):
         self.root = tk.Tk()
         self.root.title("LogfileParser")
-        self.root.geometry("950x850")  # Erhöht damit alle Buttons sichtbar sind
-        self.root.minsize(950, 850)  # Minimum-Größe festlegen
+        self.root.geometry("950x900")  # Erhöht damit alle Bereiche sichtbar sind
+        self.root.minsize(950, 900)  # Minimum-Größe festlegen
         
         self.directories = []
         self.is_parsing = False
@@ -47,7 +47,13 @@ class LogParserApp:
         self.use_database_mode = tk.BooleanVar(value=False)
         self.database_file = None  # Pfad zur Datenbank-CSV
         
+        # Lade gespeicherte Einstellungen (z.B. letzte Datenbank)
+        self._load_settings()
+        
         self._setup_ui()
+        
+        # Aktualisiere UI mit geladenen Einstellungen
+        self._update_ui_from_settings()
     
     def _setup_ui(self):
         """Erstellt die Benutzeroberfläche"""
@@ -658,6 +664,9 @@ class LogParserApp:
             )
             return
         
+        # Initialisiere output_path (wird für beide Modi benötigt)
+        output_path = None
+        
         # DATENBANK-MODUS: Validierung
         if self.use_database_mode.get():
             if not self.database_file:
@@ -679,6 +688,9 @@ class LogParserApp:
                         return
                 else:
                     return
+            
+            # Im Datenbank-Modus verwenden wir die Datenbank-Datei als Basis
+            output_path = self.database_file
         
         # NORMALER MODUS: Output-Pfad Validierung
         else:
@@ -1082,6 +1094,86 @@ class LogParserApp:
                     f"Konnte Datenbank nicht erstellen:\\n{e}"
                 )
     
+    def _load_settings(self):
+        """Lädt gespeicherte Einstellungen aus config.json"""
+        try:
+            config_file = Path(__file__).parent.parent / "config.json"
+            if config_file.exists():
+                import json
+                with open(config_file, 'r', encoding='utf-8') as f:
+                    config = json.load(f)
+                
+                # Lade Datenbank-Einstellungen
+                if 'database_file' in config and config['database_file']:
+                    db_path = Path(config['database_file'])
+                    if db_path.exists():
+                        self.database_file = str(db_path)
+                        self.use_database_mode.set(config.get('use_database_mode', False))
+                        print(f"Einstellungen geladen: Datenbank {db_path.name}")
+                
+                # Lade Custom Temp Dir
+                if 'custom_temp_dir' in config and config['custom_temp_dir']:
+                    temp_path = Path(config['custom_temp_dir'])
+                    if temp_path.exists():
+                        self.custom_temp_dir = str(temp_path)
+                
+        except Exception as e:
+            # Fehler beim Laden ignorieren - verwende Defaults
+            print(f"Hinweis: Konnte Einstellungen nicht laden: {e}")
+    
+    def _save_settings(self):
+        """Speichert aktuelle Einstellungen in config.json"""
+        try:
+            config_file = Path(__file__).parent.parent / "config.json"
+            
+            config = {
+                'database_file': self.database_file,
+                'use_database_mode': self.use_database_mode.get(),
+                'custom_temp_dir': self.custom_temp_dir
+            }
+            
+            import json
+            with open(config_file, 'w', encoding='utf-8') as f:
+                json.dump(config, indent=2, fp=f)
+            
+            print(f"Einstellungen gespeichert")
+            
+        except Exception as e:
+            # Fehler beim Speichern nicht kritisch
+            print(f"Hinweis: Konnte Einstellungen nicht speichern: {e}")
+    
+    def _update_ui_from_settings(self):
+        """Aktualisiert UI-Elemente mit geladenen Einstellungen"""
+        # Datenbank-Modus UI aktualisieren
+        if self.database_file:
+            db_path = Path(self.database_file)
+            self.db_file_var.set(str(db_path))
+            
+            # Lade Statistik wenn Datei existiert
+            if db_path.exists():
+                try:
+                    import pandas as pd
+                    df = pd.read_csv(db_path, encoding='utf-8-sig')
+                    entry_count = len(df)
+                    self.db_stats_label.config(
+                        text=f"✓ Datenbank geladen: {entry_count} Einträge"
+                    )
+                except:
+                    self.db_stats_label.config(text="✓ Datenbank geladen")
+            
+            # Aktiviere Datenbank-Buttons wenn Datenbank-Modus aktiv
+            if self.use_database_mode.get():
+                self.db_load_btn.config(state='normal')
+                self.db_new_btn.config(state='normal')
+        
+        # Custom Temp Dir anzeigen
+        if self.custom_temp_dir:
+            self.temp_dir_var.set(self.custom_temp_dir)
+            try:
+                self._update_temp_space_info()
+            except:
+                pass
+    
     def _cleanup_old_temp_dirs(self):
         """Löscht alle alten logparser_zip_* Verzeichnisse beim Programmstart"""
         try:
@@ -1105,7 +1197,15 @@ class LogParserApp:
             
             if total_size > 0:
                 size_mb = total_size / (1024 * 1024)
-                self._log(f"Startup: {total_cleaned} alte Cache-Verzeichnisse gelöscht ({size_mb:.1f} MB freigegeben)")
+                # Log nur ausgeben wenn UI bereits existiert
+                # Beim Startup ist self.log_text noch nicht initialisiert
+                try:
+                    if hasattr(self, 'log_text'):
+                        self._log(f"Startup: {total_cleaned} alte Cache-Verzeichnisse gelöscht ({size_mb:.1f} MB freigegeben)")
+                    else:
+                        print(f"Startup: {total_cleaned} alte Cache-Verzeichnisse gelöscht ({size_mb:.1f} MB freigegeben)")
+                except:
+                    print(f"Startup: {total_cleaned} alte Cache-Verzeichnisse gelöscht ({size_mb:.1f} MB freigegeben)")
         except Exception as e:
             # Startup-Fehler nicht kritisch - einfach loggen
             print(f"Startup cleanup warning: {e}")
@@ -1241,6 +1341,9 @@ class LogParserApp:
     
     def _on_closing(self):
         """Wird beim Schließen des Fensters aufgerufen - Automatisches Cache-Cleanup"""
+        # Speichere Einstellungen vor dem Schließen
+        self._save_settings()
+        
         try:
             # Sammle alle logparser_zip_* Verzeichnisse aus beiden Locations
             all_temp_dirs = []

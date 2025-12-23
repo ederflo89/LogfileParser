@@ -378,7 +378,20 @@ class AVStumpflLogParser:
                     
                     description = '\n'.join(description_lines) if description_lines else ''
                     
+                    # Normalisiere Dateinamen für Duplikaterkennung (entferne Split-Suffixe)
+                    # Wichtig: Entferne NUR Split-Suffixe am Ende, NICHT Teile des Dateinamens
+                    # z.B. "playback-27103-1.log" → "playback-27103.log" (entferne -1)
+                    # z.B. "playback-27103-WRITEABLE.log" → "playback-27103.log" (entferne -WRITEABLE)
+                    # z.B. "playback-27103.log" → "playback-27103.log" (keine Änderung!)
+                    source_path = Path(source_name)
+                    original_filename = source_path.name
+                    # Entferne NUR kleine Zahlen (1-2 Ziffern) oder -WRITEABLE am Ende
+                    # Verhindert, dass größere Zahlen wie -27103 entfernt werden
+                    normalized_filename = re.sub(r'-(?:\d{1,2}|WRITEABLE)(?=\.(?:log|txt)$)', '', original_filename)
+                    
                     # Erstelle eindeutigen Schlüssel für Duplikatserkennung
+                    # WICHTIG: Logfile-Name wird einbezogen, damit gleicher Fehler in
+                    # verschiedenen Logfiles (rx-log vs pixera-log) separat erfasst wird
                     # Normalisiere Type und Description um variable Teile zu entfernen
                     normalized_type = self._normalize_for_deduplication(log_type)
                     
@@ -391,7 +404,10 @@ class AVStumpflLogParser:
                         # Keine Description → verwende log_type als Basis für Duplikaterkennung
                         normalized_desc = normalized_type
                     
-                    error_key = f"{severity_code}|{normalized_type}|{normalized_desc}"
+                    # Dedup-Key enthält AUCH den normalisierten Dateinamen!
+                    # Format: filename|severity|type|description
+                    # Beispiel: "playback-27103.log|E|End of file|Error reading"
+                    error_key = f"{normalized_filename}|{severity_code}|{normalized_type}|{normalized_desc}"
                     
                     if error_key not in self.seen_errors:
                         self.seen_errors.add(error_key)
