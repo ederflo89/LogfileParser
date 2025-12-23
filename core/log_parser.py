@@ -68,6 +68,32 @@ def generalize_file_paths(text: str) -> str:
     result = re.sub(r'_\d{12}', '_<TIMESTAMP>', result)  # _YYYYMMDDHHMI
     result = re.sub(r'_\d{14}', '_<TIMESTAMP>', result)  # _YYYYMMDDHHMMSS
     
+    # 8. Pfad-Reste nach bereits ersetzten Platzhaltern entfernen
+    # Matches: '<URL_PATH> Resources\path\file' → '<URL_PATH>'
+    # Matches: '<DRIVE_PATH> Stumpfl/path/file' → '<DRIVE_PATH>'
+    # Wichtig: Muss auch mehrere Wörter/Pfad-Segmente erfassen bis zum nächsten Quote/Space
+    result = re.sub(r'<URL_PATH>\s+[^\'\"]*(?=[\'\"\\s]|$)', '<URL_PATH>', result)
+    result = re.sub(r'<DRIVE_PATH>\s+[^\'\"]*(?=[\'\"\\s]|$)', '<DRIVE_PATH>', result)
+    result = re.sub(r'<UNC_PATH>\s+[^\'\"]*(?=[\'\"\\s]|$)', '<UNC_PATH>', result)
+    
+    # 9. UNC-Style Pfade mit Platzhalter-IP (//192.168.1.5/share/path)
+    result = re.sub(r'//<IP>/[^\s:\'\"]*', '//<IP>/<SHARE_PATH>', result)
+    
+    # 10. Relative Pfade (SHM/path/file.pfm)
+    result = re.sub(r'\b[A-Z]{2,}/[\w/._-]+\.\w+', '<REL_PATH>', result)
+    
+    # 11. Parameter-IDs (screen_id: 12850, target_id: 12852, mapping_id: 13127)
+    result = re.sub(r'(\w+_id):\s*\d+', r'\1: <ID>', result)
+    
+    # 12. Output/Device/Port Nummern
+    result = re.sub(r'\bOutput\s+\d+', 'Output <NUM>', result)
+    result = re.sub(r'\bdevice\s+\d+', 'device <NUM>', result)
+    result = re.sub(r'\bport\s+\d+', 'port <NUM>', result)
+    
+    # 13. Matrix-Koordinaten (LRTB: 0, 0, 0, 0 / Z-NF: 10, 5e+13)
+    result = re.sub(r'LRTB:\s*[\d\.\-,\s]+', 'LRTB: <COORDS>', result)
+    result = re.sub(r'Z-NF:\s*[\d\.\-,\se\+]+', 'Z-NF: <COORDS>', result)
+    
     return result
 
 
