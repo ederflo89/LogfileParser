@@ -174,10 +174,46 @@ class AVStumpflLogParser:
             flags=re.IGNORECASE
         )
         
+        # Pattern: "Graphics Card N/Output M" - Schützen BEVOR REL_PATH matching
+        # Temporär ersetzen durch Platzhalter, damit es nicht als Pfad erkannt wird
+        normalized = re.sub(r'Graphics Card (\d+)/Output (\d+)', r'Graphics Card <NUM>/Output <NUM>', normalized)
+        
+        # Pattern: "side A time: HH:MM:SS:FFF   path: ..."
+        # Normalisiere Zeitstempel und Pfad in einem Pattern
+        # Beispiel: "side A time: 19:02:34:938   path: \\server\share\file.mov" → "side A time: <TIME>  path: <PATH>"
+        normalized = re.sub(
+            r'side A time:\s*\d+:\d+:\d+:\d+\s+path:',
+            'side A time: <TIME>  path:',
+            normalized,
+            flags=re.IGNORECASE
+        )
+        
+        # Pattern: "Pending steps timed out." mit oder ohne "side A time" - vereinheitlichen
+        # Entferne die komplette "side A time: ... path: ..." Info nach "Pending steps timed out."
+        # Beispiel: "Pending steps timed out.   side A time: <TIME>  path: <PATH>" → "Pending steps timed out."
+        normalized = re.sub(
+            r'(Pending steps timed out\.)\s+side A time:.*',
+            r'\1',
+            normalized,
+            flags=re.IGNORECASE
+        )
+        
         # ===== EINZELNE ERSETZUNGEN (nach Pattern-Normalisierung) =====
         
         # Ersetze IP-Adressen durch Platzhalter
         normalized = re.sub(r'\b(?:\d{1,3}\.){3}\d{1,3}\b', '<IP>', normalized)
+        
+        # Pattern: "Error when applying current usage" - normalisiere auch Fehler OHNE Usage-Namen
+        # MUSS NACH IP-Ersetzung kommen, damit wir mit <IP> arbeiten können
+        # Beispiel: "of <IP> to <IP>:" → "of <IP> [<USAGE>] to <IP>:" (nur wenn noch kein [<USAGE>] vorhanden)
+        if 'Error when applying current usage' in normalized and '[<USAGE>]' not in normalized:
+            # Füge [<USAGE>] nach dem ersten IP ein
+            normalized = re.sub(
+                r'(Error when applying current usage\s+of\s+<IP>)\s+(to\s+<IP>)',
+                r'\1 [<USAGE>] \2',
+                normalized,
+                flags=re.IGNORECASE
+            )
         
         # Ersetze komplette Dateinamen mit Zahlen und Extensions
         # z.B. GH_DP4_SKIE_A_5760X1416_202510021510.mov → <FILE>
@@ -198,7 +234,10 @@ class AVStumpflLogParser:
         
         # Ersetze Unix-Pfade (/path/to/file oder path/to/file)
         normalized = re.sub(r'(?:^|[\s\'\"])/(?:[^/\s\'\"]+/)*[^/\s\'\"]+', '<UNIX_PATH>', normalized)
-        normalized = re.sub(r'(?:^|[\s\'\"])[\w_-]+(?:/[\w_.-]+)+', '<REL_PATH>', normalized)
+        # Relative Pfade: Nur wenn mindestens 3 Zeichen im ersten Segment (verhindert "1/Output")
+        # ODER wenn es mit bekannten Verzeichnisnamen beginnt (Data, Content, SHM, etc.)
+        normalized = re.sub(r'(?:^|[\s\'\"])(?:Data|Content|SHM|Resources|Assets|Temp)(?:/[\w_.-]+)+', '<REL_PATH>', normalized)
+        normalized = re.sub(r'(?:^|[\s\'\"])[\w_-]{3,}(?:/[\w_.-]+)+', '<REL_PATH>', normalized)
         
         # Ersetze Zahlenfolgen in verbleibenden Namen (z.B. warp_12345_67)
         normalized = re.sub(r'_\d+(?:_\d+)*', '_<NUM>', normalized)
@@ -212,6 +251,36 @@ class AVStumpflLogParser:
         
         # Ersetze verbleibende längere Zahlenfolgen
         normalized = re.sub(r'\b\d{4,}\b', '<NUM>', normalized)
+        
+        # ===== SONDERZEICHEN UND SPEZIELLE PATTERNS =====
+        
+        # Entferne spezielle Unicode-Zeichen (z.B. √, ✓, ⚠)
+        # Diese erscheinen oft vor Namen wie [√DUAL-04_Usage1]
+        normalized = re.sub(r'[√✓✔⚠⚡✕✖✗×]', '', normalized)
+        
+        # Pattern: "Error when applying current usage ... [Name_UsageN] ..."
+        # Normalisiere Usage-Namen zu <USAGE>
+        # Beispiel: [DUAL-04_Usage1], [√DUAL-04_Usage1], [DUAL-01_Usage1] → [<USAGE>]
+        normalized = re.sub(r'\[[^\]]*_Usage\d+\]', '[<USAGE>]', normalized)
+        
+        # Pattern: "Error when applying current usage ... with matrix:"
+        # Entferne "with matrix" Teil
+        # Beispiel: "to <IP> with matrix: Could not" → "to <IP>: Could not"
+        normalized = re.sub(r'\s+with matrix:', ':', normalized)
+        
+        # Pattern: Wiederholte Fehler mit Semikolon
+        # Beispiel: "error A.; error A.; error A." → "error A."
+        # Wichtig: Nur wenn die Teile wirklich identisch sind
+        parts = normalized.split(';')
+        if len(parts) > 1:
+            # Normalisiere jeden Teil (trimme Whitespace)
+            parts = [p.strip() for p in parts if p.strip()]
+            # Nimm nur das erste einzigartige Element
+            if parts and all(p == parts[0] for p in parts):
+                normalized = parts[0]
+            else:
+                # Wenn Teile unterschiedlich sind, behalte nur den ersten
+                normalized = parts[0] if parts else normalized
         
         return normalized
     
