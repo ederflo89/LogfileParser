@@ -59,7 +59,7 @@ python tests/test_cross_logfile_deduplication.py
 
 ### Python Environment
 - **Python 3.8+** required
-- Dependencies: pandas>=2.0.0 (for CSV export)
+- Dependencies: pandas>=2.0.0 (for CSV export with improved datetime handling and performance)
 - GUI: Tkinter (included in standard Python installation)
 - No virtual environment configuration in repository
 
@@ -211,7 +211,7 @@ Netzwerk            :    38 ( 31.9%)
 - [README.md](README.md) - Project overview and usage guide
 - [FEATURES.md](FEATURES.md) - Detailed feature descriptions with examples
 - [docs/PATH_GENERALIZATION.md](docs/PATH_GENERALIZATION.md) - Path normalization deep dive
-- [core/avstumpfl_parser.py](core/avstumpfl_parser.py#L16) - All normalization patterns
+- [core/avstumpfl_parser.py](core/avstumpfl_parser.py) - All normalization patterns (see `_normalize_for_deduplication` method)
 - [core/log_parser.py](core/log_parser.py) - `generalize_file_paths()` function
 - [core/error_categorizer.py](core/error_categorizer.py) - Category regex patterns
 - [gui/main_window.py](gui/main_window.py) - GUI implementation with collapsible sections
@@ -251,7 +251,7 @@ Netzwerk            :    38 ( 31.9%)
 - Large log files are processed line-by-line (no full file loading)
 
 ## Future Enhancements (Known Gaps)
-- Enhanced anonymization system (replacement for removed anonymizer.py)
+- Enhanced anonymization system planned as replacement for removed anonymizer.py
 - Performance optimization for >10GB log collections
 - Real-time progress updates during parsing (currently shows after completion)
 - Export to JSON/SQLite formats
