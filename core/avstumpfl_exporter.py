@@ -65,8 +65,8 @@ class AVStumpflCSVExporter:
         output_file.parent.mkdir(parents=True, exist_ok=True)
         
         # Sammle Zeilen für Duplikaterkennung nach Anonymisierung
-        processed_rows = []
-        seen_after_anonymization = set()
+        # Nutze Dict um Sources zu kombinieren: key -> {row_data, sources[], logfiles[], dates[], times[]}
+        unique_errors = {}
         
         # Verarbeite alle Einträge
         for logfile, date, time, severity, log_type, description in results:
@@ -82,6 +82,10 @@ class AVStumpflCSVExporter:
                 
                 # Kürze Pfade in Description
                 clean_description = AVStumpflCSVExporter._shorten_path_in_description(clean_description)
+                
+                # Entferne spezielle Unicode-Zeichen (√, ✓, etc.) die zu Encoding-Problemen führen
+                log_type = re.sub(r'[√✓✔⚠⚡✕✖✗×]', '', log_type)
+                clean_description = re.sub(r'[√✓✔⚠⚡✕✖✗×]', '', clean_description)
                 
                 # Extrahiere Log-Kategorie (z.B. pixera_hub_logs, rx_logs)
                 parts = path.parts
@@ -109,28 +113,69 @@ class AVStumpflCSVExporter:
                 if add_category and categorizer:
                     error_category = categorizer.categorize(clean_description, log_type)
                 
-                # Erstelle Zeile
-                row = [log_category, remaining_path, filename_normalized, filename_original, count]
-                if add_category:
-                    row.append(error_category)
-                row.extend([date, time, severity, log_type, clean_description])
-                
-                # Duplikaterkennung IMMER durchführen (unabhängig von Anonymisierung)
+                # Duplikaterkennung OHNE log_category - Source wird später kombiniert
                 # Nutze Severity + Type + Description als Schlüssel
                 dedup_key = f"{severity}|{log_type}|{clean_description}"
-                if dedup_key not in seen_after_anonymization:
-                    seen_after_anonymization.add(dedup_key)
-                    processed_rows.append(row)
+                
+                if dedup_key not in unique_errors:
+                    # Neuer Fehler - erstelle Entry
+                    unique_errors[dedup_key] = {
+                        'sources': [log_category],
+                        'logfiles': [filename_normalized],
+                        'logfiles_original': [filename_original],
+                        'folders': [remaining_path],
+                        'dates': [date],
+                        'times': [time],
+                        'count': count,
+                        'severity': severity,
+                        'log_type': log_type,
+                        'description': clean_description,
+                        'error_category': error_category
+                    }
+                else:
+                    # Fehler existiert bereits - füge Source hinzu wenn noch nicht vorhanden
+                    entry = unique_errors[dedup_key]
+                    if log_category not in entry['sources']:
+                        entry['sources'].append(log_category)
+                    if filename_normalized not in entry['logfiles']:
+                        entry['logfiles'].append(filename_normalized)
+                    if filename_original not in entry['logfiles_original']:
+                        entry['logfiles_original'].append(filename_original)
+                    if remaining_path not in entry['folders']:
+                        entry['folders'].append(remaining_path)
+                    if date not in entry['dates']:
+                        entry['dates'].append(date)
+                    if time not in entry['times']:
+                        entry['times'].append(time)
+                    entry['count'] += count
+        
+        # Konvertiere zu Zeilen
+        processed_rows = []
+        for entry_data in unique_errors.values():
+            # Kombiniere Sources und Logfiles mit Komma
+            sources_combined = ', '.join(sorted(set(entry_data['sources'])))
+            logfiles_combined = ', '.join(sorted(set(entry_data['logfiles'])))
+            logfiles_orig_combined = ', '.join(sorted(set(entry_data['logfiles_original'])))
+            folders_combined = ', '.join(sorted(set(entry_data['folders']))) if entry_data['folders'] else ''
+            dates_combined = ', '.join(sorted(set(entry_data['dates'])))
+            times_combined = ', '.join(sorted(set(entry_data['times'])))
+            
+            # Erstelle Zeile
+            row = [sources_combined, folders_combined, logfiles_combined, logfiles_orig_combined, entry_data['count']]
+            if add_category:
+                row.append(entry_data['error_category'])
+            row.extend([dates_combined, times_combined, entry_data['severity'], entry_data['log_type'], entry_data['description']])
+            processed_rows.append(row)
         
         # Schreibe alle unique Zeilen
         with open(output_file, 'w', newline='', encoding='utf-8-sig') as f:
             writer = csv.writer(f, delimiter=',', quotechar='"', quoting=csv.QUOTE_MINIMAL)
             
             # Header schreiben
-            header = ['Log-Kategorie', 'Ordner', 'Logfile-Gruppe', 'Dateiname-Original', 'Anzahl']
+            header = ['Source', 'Ordner', 'Logfile-Gruppe', 'Dateiname-Original', 'Anzahl']
             if add_category:
                 header.append('Fehler-Kategorie')
-            header.extend(['Datum', 'Zeit', 'Severity', 'Type/Source', 'Description'])
+            header.extend(['Datum', 'Zeit', 'Severity', 'Error Type', 'Description'])
             writer.writerow(header)
             
             # Daten schreiben

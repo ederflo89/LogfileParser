@@ -36,6 +36,10 @@ def generalize_file_paths(text: str) -> str:
     # Kopie des Textes erstellen
     result = text
     
+    # 0. Pattern: "Graphics Card N/Output M" - Schützen BEVOR weitere Ersetzungen
+    # Verhindert dass "1/Output" als Pfad erkannt wird
+    result = re.sub(r'Graphics Card (\d+)/Output (\d+)', r'Graphics Card <NUM>/Output <NUM>', result)
+    
     # 1. URL-encoded Pfade mit <?> Prefix - MUSS ZUERST kommen
     # Matches: '<?>D:\path\file' oder '<?>\\server\share\file'
     result = re.sub(r'<\?>[A-Za-z]:[/\\][^\'"\s]*', '<URL_PATH>', result)
@@ -59,6 +63,15 @@ def generalize_file_paths(text: str) -> str:
     # Matches: '192.168.210.10:27102' oder '192.168.1.5'
     result = re.sub(r'\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}(:\d+)?', '<IP>', result)
     
+    # 5a. "side A time: HH:MM:SS:FFF   path: ..." - normalisieren BEVOR Pfade ersetzt werden
+    # Beispiel: "side A time: 19:02:34:938   path: ..." → "side A time: <TIME>  path: ..."
+    result = re.sub(
+        r'side A time:\s*\d+:\d+:\d+:\d+\s+path:',
+        'side A time: <TIME>  path:',
+        result,
+        flags=re.IGNORECASE
+    )
+    
     # 6. Datei-IDs und Hashes (lange Zahlenfolgen/Hex-Strings)
     # Diese werden NACH Pfad-Replacement durchgeführt, um auch IDs in Dateinamen zu erfassen
     result = re.sub(r'\b\d{16,}\b', '<FILE_ID>', result)  # Sehr lange Zahlen wie 4536398972959022_16660441324635355046
@@ -80,7 +93,10 @@ def generalize_file_paths(text: str) -> str:
     result = re.sub(r'//<IP>/[^\s:\'\"]*', '//<IP>/<SHARE_PATH>', result)
     
     # 10. Relative Pfade (SHM/path/file.pfm)
-    result = re.sub(r'\b[A-Z]{2,}/[\w/._-]+\.\w+', '<REL_PATH>', result)
+    # Nur wenn mindestens 3 Zeichen im ersten Segment (verhindert "1/Output")
+    # ODER wenn es mit bekannten Verzeichnisnamen beginnt
+    result = re.sub(r'\b(?:Data|Content|SHM|Resources|Assets|Temp)(?:/[\w/._-]+)+\.\w+', '<REL_PATH>', result)
+    result = re.sub(r'\b[\w_-]{3,}(?:/[\w._-]+)+\.\w+', '<REL_PATH>', result)
     
     # 11. Parameter-IDs (screen_id: 12850, target_id: 12852, mapping_id: 13127)
     result = re.sub(r'(\w+_id):\s*\d+', r'\1: <ID>', result)
@@ -93,6 +109,53 @@ def generalize_file_paths(text: str) -> str:
     # 13. Matrix-Koordinaten (LRTB: 0, 0, 0, 0 / Z-NF: 10, 5e+13)
     result = re.sub(r'LRTB:\s*[\d\.\-,\s]+', 'LRTB: <COORDS>', result)
     result = re.sub(r'Z-NF:\s*[\d\.\-,\se\+]+', 'Z-NF: <COORDS>', result)
+    
+    # 14. Entferne spezielle Unicode-Zeichen (z.B. √, ✓, ⚠)
+    # Diese erscheinen oft vor Namen wie [√DUAL-04_Usage1]
+    result = re.sub(r'[√✓✔⚠⚡✕✖✗×]', '', result)
+    
+    # 15. Usage-Namen normalisieren
+    # Beispiel: [DUAL-04_Usage1], [√DUAL-04_Usage1], [DUAL-01_Usage1] → [<USAGE>]
+    result = re.sub(r'\[[^\]]*_Usage\d+\]', '[<USAGE>]', result)
+    
+    # 16. "with matrix" in Error-Messages entfernen
+    # Beispiel: "to <IP> with matrix: Could not" → "to <IP>: Could not"
+    result = re.sub(r'\s+with matrix:', ':', result)
+    
+    # 17. Wiederholte Fehler mit Semikolon normalisieren
+    # Beispiel: "error A.; error A.; error A." → "error A."
+    parts = result.split(';')
+    if len(parts) > 1:
+        # Normalisiere jeden Teil (trimme Whitespace)
+        parts = [p.strip() for p in parts if p.strip()]
+        # Nimm nur das erste einzigartige Element
+        if parts and all(p == parts[0] for p in parts):
+            result = parts[0]
+        else:
+            # Wenn Teile unterschiedlich sind, behalte nur den ersten
+            result = parts[0] if parts else result
+    
+    # 18. "Pending steps timed out" - entferne "side A time" Information
+    # Beispiel: "Pending steps timed out.   side A time: <TIME>  path: <PATH>" → "Pending steps timed out."
+    # WICHTIG: Punkt ist optional!
+    result = re.sub(
+        r'(Pending steps timed out\.?)\s+side A time:.*',
+        r'\1',
+        result,
+        flags=re.IGNORECASE
+    )
+    
+    # 19. "Error when applying current usage" - normalisiere Usage-Namen
+    # Beispiel: "Error when applying current usage UsageName1 to computer <IP>" 
+    #        → "Error when applying current usage [<USAGE>] to computer <IP>"
+    if 'error when applying current usage' in result.lower() and '[<USAGE>]' not in result:
+        # Ersetze Usage-Namen zwischen "usage" und "to"
+        result = re.sub(
+            r'(error when applying current usage)\s+\S+\s+(to\s+computer)',
+            r'\1 [<USAGE>] \2',
+            result,
+            flags=re.IGNORECASE
+        )
     
     return result
 
